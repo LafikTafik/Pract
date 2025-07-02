@@ -17,6 +17,7 @@ namespace NAMI
         private ObstacleDetector obstacleDetector = new ObstacleDetector();
         private DecisionMaker decisionMaker = new DecisionMaker();
         private int roadLineOffset = 0; // Смещение разметки
+        private bool isPaused = false;
 
         public SimulationForm()
         {
@@ -76,8 +77,14 @@ namespace NAMI
 
             // Автомобиль (точка зрения)
             int carX = roadX + roadWidth - 100; // Машину помещаем на правой стороне дороги
-            int carY = pictureBox1.Height / 2; // По центру экрана
-            g.FillEllipse(Brushes.Blue, carX, carY, 30, 50); // Автомобиль
+            int carY = (pictureBox1.Height / 2) + 80; // По центру экрана
+            PointF[] carTriangle =
+            {
+                new PointF(carX, carY + 25),          // Левый нижний угол
+                new PointF(carX + 30, carY + 25),     // Правый нижний угол
+                new PointF(carX + 15, carY)           // Верхушка треугольника
+              };
+            g.FillPolygon(Brushes.Blue, carTriangle); // Автомобиль
         }
 
         private void UpdateDataGridView(List<DetectedObject> obstacles)
@@ -89,11 +96,15 @@ namespace NAMI
                 string typeStr = obj.Type switch
                 {
                     ObjectType.Car => "Автомобиль",
-                    ObjectType.OncomingCar => "Встречная машина",
+                    ObjectType.OncomingCar => "Встречный автомобиль",
                     ObjectType.Pedestrian => "Пешеход",
                     _ => "Неизвестный"
                 };
 
+                float carY = (pictureBox1.Height / 2) + 80; // автомобиль в центре экрана
+                float distance = Math.Abs(obj.Position.Y - carY); // расстояние до автомобиля
+
+                dataGridView1.Rows.Add(typeStr, distance, obj.Speed);
                 dataGridView1.Rows.Add(typeStr, obj.Position.Y, obj.Speed);
             }
         }
@@ -120,7 +131,7 @@ namespace NAMI
             if (timer == null)
             {
                 timer = new System.Windows.Forms.Timer();
-                timer.Interval = 500; // Обновление каждые 50 мс
+                timer.Interval = 50; // Обновление каждые 50 мс
                 timer.Tick += Timer_Tick;
                 timer.Start();
             }
@@ -128,37 +139,49 @@ namespace NAMI
 
         public void Timer_Tick(object sender, EventArgs e)
         {
+            float carY = (pictureBox1.Height / 2) + 80;
             // Получаем параметры дороги
             int roadWidth = 400;
             int roadX = pictureBox1.Width / 2 - roadWidth / 2;
 
             // Генерируем новые объекты
-            if (lidarObjects.Count < 8) // Редко добавляем новые объекты
+            if (lidarObjects.Count < 10 && _random.Next(0, 100) < 30)
             {
                 lidarObjects.AddRange(lidarSimulator.GenerateTestPoints(roadX, pictureBox1.Height));
             }
 
             // Двигаем все объекты вниз
-            foreach (var obj in lidarObjects)
+            for (int i = 0; i < lidarObjects.Count; i++)
             {
+                var obj = lidarObjects[i];
                 switch (obj.Type)
                 {
                     case ObjectType.Car:
-                        obj.Position = new PointF(obj.Position.X, obj.Position.Y + obj.Speed * 0.5f); // Свои машины медленно вниз
-                        break;
                     case ObjectType.OncomingCar:
-                        obj.Position = new PointF(obj.Position.X, obj.Position.Y + obj.Speed * 0.6f); // Встречные чуть быстрее
+                        obj.Position = new PointF(obj.Position.X, obj.Position.Y + obj.Speed * 0.6f);
                         break;
                     case ObjectType.Pedestrian:
-                        // Пешеходы двигаются слева направо
-                        obj.Position = new PointF(obj.Position.X + obj.Speed * 0.2f, obj.Position.Y + obj.Speed * 0.1f); // Более плавный переход
+                        obj.Position = new PointF(obj.Position.X + obj.Speed * 0.3f, obj.Position.Y);
                         break;
                 }
             }
 
             // Удаляем объекты, которые вышли за нижнюю границу
-            lidarObjects = lidarObjects.Where(o => o.Position.Y < pictureBox1.Height).ToList();
-
+            lidarObjects = lidarObjects
+                .Where(o =>
+                {
+                    switch (o.Type)
+                    {
+                        case ObjectType.Car:
+                        case ObjectType.OncomingCar:
+                            return o.Position.Y < pictureBox1.Height;
+                        case ObjectType.Pedestrian:
+                            return o.Position.X < pictureBox1.Width + 20; // удаляем, когда пешеход перешёл дорогу
+                        default:
+                            return true;
+                    }
+                })
+                .ToList();
             // Обновляем PictureBox
             pictureBox1.Invalidate();
 
@@ -167,9 +190,30 @@ namespace NAMI
             UpdateDataGridView(obstacles);
 
             // Обновляем рекомендацию
-            string decision = decisionMaker.MakeDecision(obstacles, null);
+            string decision = decisionMaker.MakeDecision(obstacles, carY);
+
             labelDecision.Text = $"Рекомендация: {decision}";
 
+            // Установка цвета
+            switch (decision)
+            {
+                case "Обгон по встречной полосе":
+                    labelDecision.BackColor = Color.Green;
+                    labelDecision.ForeColor = Color.White;
+                    break;
+                case "Обгон по обочине":
+                    labelDecision.BackColor = Color.Orange;
+                    labelDecision.ForeColor = Color.Black;
+                    break;
+                case "Сбросьте скорость":
+                    labelDecision.BackColor = Color.Red;
+                    labelDecision.ForeColor = Color.White;
+                    break;
+                default:
+                    labelDecision.BackColor = SystemColors.Control;
+                    labelDecision.ForeColor = SystemColors.ControlText;
+                    break;
+            }
             // Обновляем смещение разметки
             roadLineOffset += 3;
             if (roadLineOffset > 50)
@@ -177,6 +221,53 @@ namespace NAMI
 
             // Перерисовываем PictureBox
             pictureBox1.Invalidate();
+        }
+
+        private void UpdateDecisionLabel(string decision)
+        {
+            switch (decision)
+            {
+                case "Обгон по встречной полосе":
+                    labelDecision.BackColor = Color.Green;
+                    labelDecision.ForeColor = Color.White;
+                    break;
+                case "Обгон по обочине":
+                    labelDecision.BackColor = Color.Orange;
+                    labelDecision.ForeColor = Color.Black;
+                    break;
+                case "Сбросьте скорость":
+                    labelDecision.BackColor = Color.Red;
+                    labelDecision.ForeColor = Color.White;
+                    break;
+                default:
+                    labelDecision.BackColor = SystemColors.Control;
+                    labelDecision.ForeColor = SystemColors.ControlText;
+                    break;
+            }
+
+            labelDecision.Text = $"Рекомендация: {decision}";
+        }
+        private void roundedButton3_Click(object sender, EventArgs e)
+        {
+            float carY = (pictureBox1.Height / 2) + 80;
+            var obstacles = obstacleDetector.DetectObstacles(lidarObjects);
+            if (timer != null)
+            {
+                isPaused = !isPaused;
+
+                if (isPaused)
+                {
+                    timer.Stop();
+                    labelDecision.Text = "Симуляция приостановлена";
+                    labelDecision.BackColor = Color.Gray;
+                }
+                else
+                {
+                    timer.Start();
+                    string decision = decisionMaker.MakeDecision(obstacles, carY);
+                    UpdateDecisionLabel(decision); // обновляем рекомендацию
+                }
+            }
         }
     }
 }

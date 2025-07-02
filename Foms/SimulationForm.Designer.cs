@@ -36,6 +36,7 @@
             roundedButton2 = new NAMI.Helpers.RoundedButton();
             backgroundWorker1 = new System.ComponentModel.BackgroundWorker();
             timer1 = new System.Windows.Forms.Timer(components);
+            roundedButton3 = new NAMI.Helpers.RoundedButton();
             ((System.ComponentModel.ISupportInitialize)pictureBox1).BeginInit();
             ((System.ComponentModel.ISupportInitialize)dataGridView1).BeginInit();
             SuspendLayout();
@@ -56,7 +57,7 @@
             dataGridView1.Location = new Point(818, 12);
             dataGridView1.Name = "dataGridView1";
             dataGridView1.RowHeadersWidth = 51;
-            dataGridView1.Size = new Size(400, 700);
+            dataGridView1.Size = new Size(500, 700);
             dataGridView1.TabIndex = 1;
             // 
             // labelDecision
@@ -78,7 +79,7 @@
             roundedButton1.FlatStyle = FlatStyle.Flat;
             roundedButton1.Font = new Font("T-FLEX Type B", 25.8F, FontStyle.Bold, GraphicsUnit.Point, 204);
             roundedButton1.ForeColor = SystemColors.Highlight;
-            roundedButton1.Location = new Point(418, 841);
+            roundedButton1.Location = new Point(1410, 841);
             roundedButton1.Name = "roundedButton1";
             roundedButton1.Size = new Size(400, 100);
             roundedButton1.TabIndex = 3;
@@ -105,12 +106,28 @@
             // 
             timer1.Interval = 50;
             // 
+            // roundedButton3
+            // 
+            roundedButton3.BackColor = SystemColors.ControlLightLight;
+            roundedButton3.CornerRadius = 20;
+            roundedButton3.FlatStyle = FlatStyle.Flat;
+            roundedButton3.Font = new Font("T-FLEX Type B", 25.8F, FontStyle.Bold, GraphicsUnit.Point, 204);
+            roundedButton3.ForeColor = SystemColors.Highlight;
+            roundedButton3.Location = new Point(418, 841);
+            roundedButton3.Name = "roundedButton3";
+            roundedButton3.Size = new Size(400, 100);
+            roundedButton3.TabIndex = 5;
+            roundedButton3.Text = "Пауза";
+            roundedButton3.UseVisualStyleBackColor = false;
+            roundedButton3.Click += roundedButton3_Click;
+            // 
             // SimulationForm
             // 
             AutoScaleDimensions = new SizeF(8F, 20F);
             AutoScaleMode = AutoScaleMode.Font;
             BackColor = SystemColors.ActiveCaption;
             ClientSize = new Size(1822, 953);
+            Controls.Add(roundedButton3);
             Controls.Add(roundedButton2);
             Controls.Add(roundedButton1);
             Controls.Add(labelDecision);
@@ -134,5 +151,6 @@
         private Helpers.RoundedButton roundedButton2;
         private System.ComponentModel.BackgroundWorker backgroundWorker1;
         private System.Windows.Forms.Timer timer1;
+        private Helpers.RoundedButton roundedButton3;
     }
 }

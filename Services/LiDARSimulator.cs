@@ -19,41 +19,41 @@ namespace NAMI.Services
         {
             var objects = new List<DetectedObject>();
 
-            // 1. Машина на своей полосе
-            if (_random.Next(0, 100) < 20)
+            // 🚗 Своя машина — теперь появляется справа
+            if (_random.Next(0, 100) < 10) // 15% шанс
             {
-                float y = _random.Next(0, 50); // появляется сверху
+                float y = _random.Next(0, 50); // сверху
                 objects.Add(new DetectedObject
                 {
                     Type = ObjectType.Car,
-                    Position = new PointF(roadX + LaneOffset, y),
-                    Speed = 25 // Скорость автомобиля
+                    Position = new PointF(roadX + RoadWidth - LaneOffset, y), // справа
+                    Speed = 10f // реалистичная скорость
                 });
             }
 
-            // Встречная машина
-            if (_random.Next(0, 100) < 25)
+            //  Встречная машина — теперь появляется слева
+            if (_random.Next(0, 100) < 15) // 10% шанс
             {
-                float y = _random.Next(0, 50); // появляется сверху
+                float y = _random.Next(0, 50); // сверху
                 objects.Add(new DetectedObject
                 {
                     Type = ObjectType.OncomingCar,
-                    Position = new PointF(roadX + RoadWidth - LaneOffset, y),
-                    Speed = 50 // чуть быстрее
+                    Position = new PointF(roadX + LaneOffset, y), // слева
+                    Speed = 20f // чуть быстрее
                 });
             }
 
-            // Пешеход
+            // 👤 Пешеход — появляется слева и переходит дорогу
             if (_random.Next(0, 100) < 5) // 5% шанс
             {
-                float x = roadX - 20; // Слева от дороги
-                float y = _random.Next(pictureBoxHeight / 2 - 50, pictureBoxHeight / 2 + 50); // По центру высоты
+                float x = roadX - 20; // слева от дороги
+                float y = _random.Next(pictureBoxHeight / 2 - 50, pictureBoxHeight / 2 + 50); // центр дороги
 
                 objects.Add(new DetectedObject
                 {
                     Type = ObjectType.Pedestrian,
                     Position = new PointF(x, y),
-                    Speed = 2f // Медленнее, чем автомобили
+                    Speed = 50f // медленнее, чем автомобили
                 });
             }
 

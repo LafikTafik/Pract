@@ -4,34 +4,62 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
+using System.Windows.Forms;
 
 namespace NAMI.Services
 {
-    class DecisionMaker
+    public class DecisionMaker
     {
-        public string MakeDecision(List<DetectedObject> obstacles, TrafficSign trafficSign = null)
+        private const int SafeDistance = 200; // если объект ближе, чем это значение — опасность
+        private const int PedestrianWarningDistance = 300;
+
+        public string MakeDecision(List<DetectedObject> obstacles, float carY)
         {
+            bool hasCar = false;
+            bool hasOncomingCar = false;
+            float closestPedestrianDistance = float.MaxValue; // начальное значение
+
             foreach (var obj in obstacles)
             {
-                // Если есть пешеход перед нами — останавливаемся
-                if (obj.Type == ObjectType.Pedestrian && obj.Position.Y < 200)
+                if (obj.Position.Y < SafeDistance)
                 {
-                    return "Остановиться — пешеход на проезжей части!";
-                }
-
-                // Если встречная машина приближается — объехать справа
-                if (obj.Type == ObjectType.OncomingCar && obj.Position.Y < 300)
-                {
-                    return "Объехать справа — встречный автомобиль";
-                }
-
-                // Если объект на нашей полосе близко — останавливаемся
-                if (obj.Type == ObjectType.Car && obj.Position.Y < 100)
-                {
-                    return "Остановиться — автомобиль впереди";
+                    switch (obj.Type)
+                    {
+                        case ObjectType.Car:
+                            hasCar = true;
+                            break;
+                        case ObjectType.OncomingCar:
+                            hasOncomingCar = true;
+                            break;
+                        case ObjectType.Pedestrian:
+                            // Рассчитываем расстояние до пешехода
+                            float distanceToPedestrian = Math.Abs(obj.Position.Y - carY);
+                            if (distanceToPedestrian < closestPedestrianDistance)
+                            {
+                                closestPedestrianDistance = distanceToPedestrian;
+                            }
+                            break;
+                    }
                 }
             }
 
+            // Приоритеты:
+            if (closestPedestrianDistance < PedestrianWarningDistance)
+            {
+                return "Сбросьте скорость";
+            }
+
+            if (hasCar && !hasOncomingCar)
+            {
+                return "Обгон по встречной полосе";
+            }
+
+            if (hasCar && hasOncomingCar)
+            {
+                return "Обгон по обочине";
+            }
+
+            // Если ничего не нашли, вернём дефолтное сообщение
             return "Движение разрешено";
         }
     }
