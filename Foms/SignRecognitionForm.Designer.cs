@@ -41,7 +41,7 @@
             labelSign.BackColor = SystemColors.ButtonHighlight;
             labelSign.Font = new Font("T-FLEX Type B", 19.7999973F, FontStyle.Bold, GraphicsUnit.Point, 204);
             labelSign.ForeColor = SystemColors.Highlight;
-            labelSign.Location = new Point(12, 447);
+            labelSign.Location = new Point(12, 478);
             labelSign.Name = "labelSign";
             labelSign.Size = new Size(82, 36);
             labelSign.TabIndex = 10;
@@ -49,9 +49,9 @@
             // 
             // picboxsign
             // 
-            picboxsign.Location = new Point(12, 12);
+            picboxsign.Location = new Point(114, 12);
             picboxsign.Name = "picboxsign";
-            picboxsign.Size = new Size(806, 432);
+            picboxsign.Size = new Size(621, 432);
             picboxsign.SizeMode = PictureBoxSizeMode.Zoom;
             picboxsign.TabIndex = 9;
             picboxsign.TabStop = false;
@@ -91,7 +91,7 @@
             AutoScaleDimensions = new SizeF(8F, 20F);
             AutoScaleMode = AutoScaleMode.Font;
             BackColor = SystemColors.ActiveCaption;
-            ClientSize = new Size(838, 651);
+            ClientSize = new Size(855, 651);
             Controls.Add(roundedButton1);
             Controls.Add(roundedButton3);
             Controls.Add(labelSign);

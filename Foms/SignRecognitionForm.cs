@@ -25,8 +25,10 @@ namespace NAMI.Foms
 
         private void roundedButton3_Click(object sender, EventArgs e)
         {
+
             using (OpenFileDialog ofd = new OpenFileDialog())
             {
+
                 ofd.Filter = "Image Files (*.jpg;*.png;*.bmp)|*.jpg;*.png;*.bmp";
                 if (ofd.ShowDialog() == DialogResult.OK)
                 {
@@ -53,19 +55,19 @@ namespace NAMI.Foms
         {
             if (image.IsEmpty) return "Неизвестный";
 
-            // Шаг 1: Преобразование изображения
+            // Предварительная обработка
             Mat resized = new Mat();
-            CvInvoke.Resize(image, resized, new Size(500, 500));
+            CvInvoke.Resize(image, resized, new Size(640, 640));
 
-            Mat hsv = new Mat();
-            CvInvoke.CvtColor(resized, hsv, ColorConversion.Bgr2Hsv);
-
-            // Шаг 2: Поиск контуров
             Mat gray = new Mat();
             CvInvoke.CvtColor(resized, gray, ColorConversion.Bgr2Gray);
+            CvInvoke.EqualizeHist(gray, gray);
+            CvInvoke.GaussianBlur(gray, gray, new Size(5, 5), 0);
 
             Mat binary = new Mat();
             CvInvoke.Threshold(gray, binary, 150, 255, ThresholdType.BinaryInv);
+
+
 
             VectorOfVectorOfPoint contours = new VectorOfVectorOfPoint();
             CvInvoke.FindContours(binary, contours, null, RetrType.External, ChainApproxMethod.ChainApproxSimple);
@@ -73,47 +75,70 @@ namespace NAMI.Foms
             for (int i = 0; i < contours.Size; i++)
             {
                 VectorOfPoint contour = contours[i];
-                VectorOfPoint approx = new VectorOfPoint();
                 double perimeter = CvInvoke.ArcLength(contour, true);
+                VectorOfPoint approx = new VectorOfPoint();
                 CvInvoke.ApproxPolyDP(contour, approx, 0.04 * perimeter, true);
-
+                Rectangle roi = CvInvoke.BoundingRectangle(approx);
                 int corners = approx.Size;
                 Rectangle rect = CvInvoke.BoundingRectangle(approx);
 
-                if (rect.Width < 30 || rect.Height < 30) continue;
+                Console.WriteLine($"Контур {i}: Углы={corners}, Ширина={rect.Width}, Высота={rect.Height}");
 
-                // Шаг 3: Анализ формы
-                string shape = GetShape(corners, rect);
-
-                // Шаг 4: Анализ цвета
-                string color = GetDominantColor(resized, rect);
-
-                // Шаг 5: Комбинируем форму и цвет для определения знака
-                switch (shape)
+                if (rect.Width < 80 || rect.Height < 80)
                 {
-                    case "octagon" when color == "red":
-                        return "Стоп";
+                    Console.WriteLine("Пропускаем: слишком маленький объект");
+                    continue;
+                }
 
-                    case "circle" when color == "red":
-                        return "Ограничение скорости";
+                string shape = GetShape(corners, rect);
+                string color = GetDominantColor(resized, rect);
+                bool hasWhiteCenter = HasWhiteCenter(resized, rect, roi);
+                bool hasRedBorder = HasRedBorder(resized, rect, roi);
+                bool isSpeedLimitNumber = HasSpeedLimitDigit(resized, rect, roi);
+                bool isInvertedTriangle = IsInvertedTriangle(approx);
+                bool hasPedestrianPattern = HasPedestrianPattern(resized, rect, roi);
 
-                    case "triangle" when color == "red" && IsInvertedTriangle(resized, rect):
-                        return "Уступите дорогу";
+                Console.WriteLine($"Форма: {shape}, Цвет: {color}");
+                Console.WriteLine($"Белый центр: {hasWhiteCenter}, Красная окантовка: {hasRedBorder}, Цифра: {isSpeedLimitNumber}, Пешеход: {hasPedestrianPattern}");
 
-                    case "circle" when color == "blue":
-                        return "Пешеходный переход";
+                // Стоп
+                if (shape == "octagon" && color == "red")
+                {
+                    return "Стоп";
+                }
 
-                    case "square" when color == "blue":
-                        return "Движение прямо";
+                // Ограничение скорости
+                if (shape == "circle" && hasRedBorder && hasWhiteCenter && isSpeedLimitNumber)
+                {
+                    return "Ограничение скорости";
+                }
 
-                    case "square" when color == "green":
-                        return "Направление";
+                // Уступите дорогу
+                if (shape == "triangle" && color == "red" && hasWhiteCenter && isInvertedTriangle)
+                {
+                    return "Уступите дорогу";
+                }
 
-                    default:
-                        return "Неизвестный знак";
+                // Пешеходный переход
+                if (shape == "circle" && color == "blue" && hasPedestrianPattern)
+                {
+                    return "Пешеходный переход";
+                }
+
+                // Движение прямо
+                if (shape == "square" && color == "blue" && HasStraightArrow(resized, rect))
+                {
+                    return "Движение прямо";
+                }
+
+                // Направление
+                if (shape == "square" && color == "green" && HasDirectionArrow(resized, rect))
+                {
+                    return "Направление";
                 }
             }
-            return "Не найдено";
+
+            return "Неизвестный знак";
         }
 
         private string GetShape(int corners, Rectangle rect)
@@ -124,25 +149,23 @@ namespace NAMI.Foms
                 return "octagon"; // Восьмиугольник
 
             if (corners == 3)
-                return "triangle";
-
-            if (corners == 4 && rect.Width > rect.Height * 1.2)
-                return "rectangle_long";
+                return "triangle"; // Треугольник
 
             if (corners == 4 && Math.Abs(aspectRatio - 1) < 0.2)
-                return "square";
-
-            if (corners == 4 && aspectRatio < 0.6)
-                return "horizontal_rectangle";
+                return "square"; // Квадрат
 
             if (corners == 4 && aspectRatio > 1.5)
-                return "vertical_rectangle";
+                return "horizontal_rectangle"; // Горизонтальный прямоугольник
 
-            if (corners > 6)
-                return "circle";
+            if (corners == 4 && aspectRatio < 0.6)
+                return "vertical_rectangle"; // Вертикальный прямоугольник
+
+            if (corners > 6 && Math.Abs(aspectRatio - 1) < 0.1)
+                return "circle"; // Круг
 
             return "unknown";
         }
+
 
         private void roundedButton1_Click(object sender, EventArgs e)
         {
@@ -158,31 +181,46 @@ namespace NAMI.Foms
 
         private string GetDominantColor(Mat image, Rectangle roi)
         {
-            // Создаём новый Mat для копирования ROI
+            // Проверка, чтобы ROI был внутри изображения
+            if (roi.X < 0 || roi.Y < 0 ||
+                roi.Width <= 0 || roi.Height <= 0 ||
+                roi.X + roi.Width > image.Cols || roi.Y + roi.Height > image.Rows)
+            {
+                return "unknown";
+            }
+
             using (Mat cropped = new Mat())
             {
-                // Копируем ROI с использованием CopyMakeBorder
-                CvInvoke.CopyMakeBorder(image, cropped, roi.Top, roi.Bottom, roi.Left, roi.Right, BorderType.Constant, new MCvScalar(0));
+                int top = roi.Y;
+                int bottom = image.Rows - roi.Y - roi.Height;
+                int left = roi.X;
+                int right = image.Cols - roi.X - roi.Width;
 
-                // Переводим в HSV
+                // Убедимся, что все значения положительные
+                top = Math.Max(0, top);
+                bottom = Math.Max(0, bottom);
+                left = Math.Max(0, left);
+                right = Math.Max(0, right);
+
+                CvInvoke.CopyMakeBorder(image, cropped, top, bottom, left, right, BorderType.Constant, new MCvScalar(0));
+
+                // Переводим в HSV для анализа цвета
                 Mat hsv = new Mat();
                 CvInvoke.CvtColor(cropped, hsv, ColorConversion.Bgr2Hsv);
 
-                // Диапазон красного цвета
                 ScalarArray lowerRed = new ScalarArray(new MCvScalar(0, 100, 100));
                 ScalarArray upperRed = new ScalarArray(new MCvScalar(10, 255, 255));
+                ScalarArray lowerBlue = new ScalarArray(new MCvScalar(100, 150, 50));
+                ScalarArray upperBlue = new ScalarArray(new MCvScalar(140, 255, 255));
+
                 Mat maskRed = new Mat();
                 CvInvoke.InRange(hsv, lowerRed, upperRed, maskRed);
                 int redCount = CountNonZero(maskRed);
 
-                // Диапазон синего цвета
-                ScalarArray lowerBlue = new ScalarArray(new MCvScalar(100, 150, 50));
-                ScalarArray upperBlue = new ScalarArray(new MCvScalar(140, 255, 255));
                 Mat maskBlue = new Mat();
                 CvInvoke.InRange(hsv, lowerBlue, upperBlue, maskBlue);
                 int blueCount = CountNonZero(maskBlue);
 
-                // Диапазон белого цвета
                 Mat grayMask = new Mat();
                 CvInvoke.CvtColor(cropped, grayMask, ColorConversion.Bgr2Gray);
                 CvInvoke.Threshold(grayMask, grayMask, 200, 255, ThresholdType.Binary);
@@ -190,56 +228,234 @@ namespace NAMI.Foms
 
                 if (redCount > blueCount && redCount > whiteCount)
                     return "red";
-                else if (blueCount > whiteCount)
+
+                if (blueCount > whiteCount)
                     return "blue";
 
                 return "white";
             }
         }
 
-        private int CountColor(Mat hsv, ScalarArray lower, ScalarArray upper)
+
+        private bool IsInvertedTriangle(VectorOfPoint approx)
         {
-            Mat mask = new Mat();
-            CvInvoke.InRange(hsv, lower, upper, mask);
+            if (approx.Size != 3) return false;
 
-            VectorOfPoint nonZeroPoints = new VectorOfPoint();
-            CvInvoke.FindNonZero(mask, nonZeroPoints);
+            Point p1 = approx[0];
+            Point p2 = approx[1];
+            Point p3 = approx[2];
 
-            int count = nonZeroPoints.Size;
-            return count; // Используем Size вместо Length
+            int lowestY = Math.Max(p1.Y, Math.Max(p2.Y, p3.Y));
+
+            return (p1.Y == lowestY || p2.Y == lowestY || p3.Y == lowestY);
         }
 
-        private bool IsInvertedTriangle(Mat image, Rectangle rect)
+        private bool HasDirectionArrow(Mat image, Rectangle rect)
         {
-            // Извлекаем ROI и находим контуры
-            Mat roi = new Mat(image, rect);
-            Mat gray = new Mat();
-            CvInvoke.CvtColor(roi, gray, ColorConversion.Bgr2Gray);
-
-            VectorOfVectorOfPoint triangleContours = new VectorOfVectorOfPoint();
-            CvInvoke.FindContours(gray, triangleContours, null, RetrType.List, ChainApproxMethod.ChainApproxSimple);
-
-            for (int i = 0; i < triangleContours.Size; i++)
+            using (Mat cropped = new Mat())
             {
-                VectorOfPoint approx = new VectorOfPoint();
-                double peri = CvInvoke.ArcLength(triangleContours[i], true);
-                CvInvoke.ApproxPolyDP(triangleContours[i], approx, 0.04 * peri, true);
 
-                if (approx.Size == 3)
+                CvInvoke.CopyMakeBorder(image, cropped, rect.Y, image.Rows - rect.Bottom, rect.X, image.Cols - rect.Width, BorderType.Constant, new MCvScalar(0));
+
+                Mat gray = new Mat();
+                CvInvoke.CvtColor(cropped, gray, ColorConversion.Bgr2Gray);
+                CvInvoke.Threshold(gray, gray, 200, 255, ThresholdType.Binary);
+
+                VectorOfVectorOfPoint arrowContours = new VectorOfVectorOfPoint();
+                CvInvoke.FindContours(gray, arrowContours, null, RetrType.List, ChainApproxMethod.ChainApproxSimple);
+
+                for (int i = 0; i < arrowContours.Size; i++)
                 {
-                    // Проверяем ориентацию треугольника
-                    Point p1 = approx[0];
-                    Point p2 = approx[1];
-                    Point p3 = approx[2];
+                    VectorOfPoint approx = new VectorOfPoint();
+                    double peri = CvInvoke.ArcLength(arrowContours[i], true);
+                    CvInvoke.ApproxPolyDP(arrowContours[i], approx, 0.04 * peri, true);
 
-                    // Если вершина треугольника внизу → перевёрнутый
-                    int topY = Math.Min(p1.Y, Math.Min(p2.Y, p3.Y));
-                    return topY == p1.Y || topY == p2.Y || topY == p3.Y;
+                    if (approx.Size >= 5 && approx.Size <= 10)
+                        return true;
                 }
+
+                return false;
             }
-
-            return false;
         }
-    }
 
+        private bool HasStraightArrow(Mat image, Rectangle rect)
+        {
+            using (Mat cropped = new Mat())
+            {
+                CvInvoke.CopyMakeBorder(image, cropped, rect.Y, image.Rows - rect.Bottom, rect.X, image.Cols - rect.Width, BorderType.Constant, new MCvScalar(0));
+
+                Mat gray = new Mat();
+                CvInvoke.CvtColor(cropped, gray, ColorConversion.Bgr2Gray);
+                CvInvoke.Threshold(gray, gray, 200, 255, ThresholdType.Binary);
+
+                VectorOfVectorOfPoint arrowContours = new VectorOfVectorOfPoint();
+                CvInvoke.FindContours(gray, arrowContours, null, RetrType.List, ChainApproxMethod.ChainApproxSimple);
+
+                for (int i = 0; i < arrowContours.Size; i++)
+                {
+                    VectorOfPoint approx = new VectorOfPoint();
+                    double peri = CvInvoke.ArcLength(arrowContours[i], true);
+                    CvInvoke.ApproxPolyDP(arrowContours[i], approx, 0.04 * peri, true);
+
+                    // Стрелка вверх → около 6-8 углов
+                    if (approx.Size >= 6 && approx.Size <= 9)
+                        return true;
+                }
+
+                return false;
+            }
+        }
+
+        private bool HasWhiteCenter(Mat image, Rectangle rect, Rectangle roi)
+        {
+            using (Mat cropped = new Mat())
+            {
+
+                int top = roi.Y;
+                int bottom = image.Rows - roi.Y - roi.Height;
+                int left = roi.X;
+                int right = image.Cols - roi.X - roi.Width;
+
+                if (top < 0 || bottom < 0 || left < 0 || right < 0)
+                    return false;
+
+                CvInvoke.CopyMakeBorder(image, cropped, top, bottom, left, right, BorderType.Constant, new MCvScalar(0));
+                Mat hsv = new Mat();
+                CvInvoke.CvtColor(cropped, hsv, ColorConversion.Bgr2Hsv);
+
+                ScalarArray lowerWhite = new ScalarArray(new MCvScalar(0, 0, 200));
+                ScalarArray upperWhite = new ScalarArray(new MCvScalar(180, 30, 255));
+                Mat maskWhite = new Mat();
+                CvInvoke.InRange(hsv, lowerWhite, upperWhite, maskWhite);
+
+                int whiteCount = CountNonZero(maskWhite);
+                double totalArea = roi.Width * roi.Height;
+
+                return whiteCount / totalArea > 0.6;
+            }
+        }
+
+        private bool HasRedBorder(Mat image, Rectangle rect, Rectangle roi)
+        {
+            using (Mat cropped = new Mat())
+            {
+                int top = roi.Y;
+                int bottom = image.Rows - roi.Y - roi.Height;
+                int left = roi.X;
+                int right = image.Cols - roi.X - roi.Width;
+
+                if (top < 0 || bottom < 0 || left < 0 || right < 0)
+                    return false;
+
+                CvInvoke.CopyMakeBorder(image, cropped, top, bottom, left, right, BorderType.Constant, new MCvScalar(0));
+
+                Mat hsv = new Mat();
+                CvInvoke.CvtColor(cropped, hsv, ColorConversion.Bgr2Hsv);
+
+                ScalarArray lowerRed = new ScalarArray(new MCvScalar(0, 100, 100));
+                ScalarArray upperRed = new ScalarArray(new MCvScalar(10, 255, 255));
+                Mat maskRed = new Mat();
+                CvInvoke.InRange(hsv, lowerRed, upperRed, maskRed);
+
+                // Применяем морфологические операции
+                CvInvoke.Dilate(maskRed, maskRed, null, new Point(1, 1), 1, BorderType.Constant, default);
+
+                int redCount = CountNonZero(maskRed);
+                double totalArea = roi.Width * roi.Height;
+
+                return redCount / totalArea > 0.3;
+            }
+        }
+
+        private bool HasSpeedLimitDigit(Mat image, Rectangle rect, Rectangle roi)
+        {
+            using (Mat cropped = new Mat())
+            {
+                CvInvoke.CopyMakeBorder(image, cropped, roi.Y, image.Rows - roi.Bottom, roi.X, image.Cols - roi.Right, BorderType.Constant, new MCvScalar(0));
+
+                Mat gray = new Mat();
+                CvInvoke.CvtColor(cropped, gray, ColorConversion.Bgr2Gray);
+                CvInvoke.Threshold(gray, gray, 200, 255, ThresholdType.Binary);
+
+                VectorOfVectorOfPoint digitContours = new VectorOfVectorOfPoint();
+                CvInvoke.FindContours(gray, digitContours, null, RetrType.List, ChainApproxMethod.ChainApproxSimple);
+
+                for (int i = 0; i < digitContours.Size; i++)
+                {
+                    VectorOfPoint approx = new VectorOfPoint();
+                    double peri = CvInvoke.ArcLength(digitContours[i], true);
+                    CvInvoke.ApproxPolyDP(digitContours[i], approx, 0.04 * peri, true);
+
+                    // Цифры обычно имеют 4-9 углов
+                    if (approx.Size >= 4 && approx.Size <= 9)
+                        return true;
+                }
+
+                return false;
+            }
+        }
+
+        private bool HasPedestrianPattern(Mat image, Rectangle rect, Rectangle roi)
+        {
+            using (Mat cropped = new Mat())
+            {
+                CvInvoke.CopyMakeBorder(image, cropped, roi.Y, image.Rows - roi.Bottom, roi.X, image.Cols - roi.Right, BorderType.Constant, new MCvScalar(0));
+
+                Mat gray = new Mat();
+                CvInvoke.CvtColor(cropped, gray, ColorConversion.Bgr2Gray);
+                CvInvoke.Threshold(gray, gray, 200, 255, ThresholdType.Binary);
+
+                // Ищем горизонтальные линии (полосы пешеходного перехода)
+                Mat edges = new Mat();
+                CvInvoke.Canny(gray, edges, 50, 150);
+
+                LineSegment2D[] lines = CvInvoke.HoughLinesP(edges, 1, Math.PI / 180, 100, 30, 10);
+                int horizontalLines = 0;
+
+                foreach (var line in lines)
+                {
+                    float angle = Math.Abs(line.P1.Y - line.P2.Y);
+                    if (angle < 10)
+                        horizontalLines++;
+                }
+
+                return horizontalLines >= 3;
+            }
+        }
+
+        private bool AnalyzeInterior(Mat image, Rectangle roi, string shape)
+        {
+            using (Mat cropped = new Mat())
+            {
+                CvInvoke.CopyMakeBorder(image, cropped, roi.Y, image.Rows - roi.Y - roi.Height,
+                    roi.X, image.Cols - roi.X - roi.Width, BorderType.Constant, new MCvScalar());
+
+                Mat grayCropped = new Mat();
+                CvInvoke.CvtColor(cropped, grayCropped, ColorConversion.Bgr2Gray);
+                CvInvoke.Threshold(grayCropped, grayCropped, 128, 255, ThresholdType.Binary);
+
+                // Поиск внутренних контуров
+                VectorOfVectorOfPoint innerContours = new VectorOfVectorOfPoint();
+                CvInvoke.FindContours(grayCropped, innerContours, null, RetrType.List, ChainApproxMethod.ChainApproxSimple);
+
+                int innerCornerCount = 0;
+                for (int j = 0; j < innerContours.Size; j++)
+                {
+                    VectorOfPoint approx = new VectorOfPoint();
+                    double peri = CvInvoke.ArcLength(innerContours[j], true);
+                    CvInvoke.ApproxPolyDP(innerContours[j], approx, 0.04 * peri, true);
+
+                    if (approx.Size > 2)
+                        innerCornerCount += approx.Size;
+                }
+
+                Console.WriteLine($"Внутренние углы: {innerCornerCount}");
+
+                // Если много внутренних контуров — это может быть цифра или полосы
+                return innerCornerCount > 10;
+            }
+        }
+
+      
+    }
 }
