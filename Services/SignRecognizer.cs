@@ -16,7 +16,7 @@ namespace NAMI.Services
             if (image != null)
             {
                 
-                return new TrafficSign { Type = "Stop" };
+               // return new TrafficSign { Type = "Stop" };
             }
 
             return null;
