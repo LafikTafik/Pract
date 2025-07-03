@@ -17,11 +17,18 @@ namespace NAMI.Services
         {
             bool hasCar = false;
             bool hasOncomingCar = false;
-            float closestPedestrianDistance = float.MaxValue; // начальное значение
+            float closestPedestrianDistance = float.MaxValue;
 
             foreach (var obj in obstacles)
             {
-                if (obj.Position.Y < SafeDistance)
+                float distanceToCar = Math.Abs(obj.Position.Y - carY);
+
+                if (distanceToCar < PedestrianWarningDistance && obj.Type == ObjectType.Pedestrian)
+                {
+                    closestPedestrianDistance = Math.Min(closestPedestrianDistance, distanceToCar);
+                }
+
+                if (distanceToCar < SafeDistance)
                 {
                     switch (obj.Type)
                     {
@@ -31,22 +38,13 @@ namespace NAMI.Services
                         case ObjectType.OncomingCar:
                             hasOncomingCar = true;
                             break;
-                        case ObjectType.Pedestrian:
-                            // Рассчитываем расстояние до пешехода
-                            float distanceToPedestrian = Math.Abs(obj.Position.Y - carY);
-                            if (distanceToPedestrian < closestPedestrianDistance)
-                            {
-                                closestPedestrianDistance = distanceToPedestrian;
-                            }
-                            break;
                     }
                 }
             }
 
-            // Приоритеты:
             if (closestPedestrianDistance < PedestrianWarningDistance)
             {
-                return "Сбросьте скорость";
+                return "Пешеход - Сбросьте скорость";
             }
 
             if (hasCar && !hasOncomingCar)
@@ -59,7 +57,6 @@ namespace NAMI.Services
                 return "Обгон по обочине";
             }
 
-            // Если ничего не нашли, вернём дефолтное сообщение
             return "Движение разрешено";
         }
     }

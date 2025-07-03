@@ -37,8 +37,14 @@
             backgroundWorker1 = new System.ComponentModel.BackgroundWorker();
             timer1 = new System.Windows.Forms.Timer(components);
             roundedButton3 = new NAMI.Helpers.RoundedButton();
+            pictureBox2 = new PictureBox();
+            dataGridView2 = new DataGridView();
+            labelSign = new Label();
+            roundedButton4 = new NAMI.Helpers.RoundedButton();
             ((System.ComponentModel.ISupportInitialize)pictureBox1).BeginInit();
             ((System.ComponentModel.ISupportInitialize)dataGridView1).BeginInit();
+            ((System.ComponentModel.ISupportInitialize)pictureBox2).BeginInit();
+            ((System.ComponentModel.ISupportInitialize)dataGridView2).BeginInit();
             SuspendLayout();
             // 
             // pictureBox1
@@ -121,12 +127,57 @@
             roundedButton3.UseVisualStyleBackColor = false;
             roundedButton3.Click += roundedButton3_Click;
             // 
+            // pictureBox2
+            // 
+            pictureBox2.Location = new Point(1324, 12);
+            pictureBox2.Name = "pictureBox2";
+            pictureBox2.Size = new Size(486, 319);
+            pictureBox2.TabIndex = 6;
+            pictureBox2.TabStop = false;
+            // 
+            // dataGridView2
+            // 
+            dataGridView2.ColumnHeadersHeightSizeMode = DataGridViewColumnHeadersHeightSizeMode.AutoSize;
+            dataGridView2.Location = new Point(1324, 337);
+            dataGridView2.Name = "dataGridView2";
+            dataGridView2.RowHeadersWidth = 51;
+            dataGridView2.Size = new Size(486, 336);
+            dataGridView2.TabIndex = 7;
+            // 
+            // labelSign
+            // 
+            labelSign.AutoSize = true;
+            labelSign.BackColor = SystemColors.ButtonHighlight;
+            labelSign.Font = new Font("T-FLEX Type B", 19.7999973F, FontStyle.Bold, GraphicsUnit.Point, 204);
+            labelSign.ForeColor = SystemColors.Highlight;
+            labelSign.Location = new Point(1324, 676);
+            labelSign.Name = "labelSign";
+            labelSign.Size = new Size(82, 36);
+            labelSign.TabIndex = 8;
+            labelSign.Text = "Знак:";
+            // 
+            // roundedButton4
+            // 
+            roundedButton4.BackColor = SystemColors.ButtonFace;
+            roundedButton4.CornerRadius = 20;
+            roundedButton4.Location = new Point(926, 749);
+            roundedButton4.Name = "roundedButton4";
+            roundedButton4.Size = new Size(226, 100);
+            roundedButton4.TabIndex = 9;
+            roundedButton4.Text = "roundedButton4";
+            roundedButton4.UseVisualStyleBackColor = false;
+            roundedButton4.Click += roundedButton4_Click;
+            // 
             // SimulationForm
             // 
             AutoScaleDimensions = new SizeF(8F, 20F);
             AutoScaleMode = AutoScaleMode.Font;
             BackColor = SystemColors.ActiveCaption;
             ClientSize = new Size(1822, 953);
+            Controls.Add(roundedButton4);
+            Controls.Add(labelSign);
+            Controls.Add(dataGridView2);
+            Controls.Add(pictureBox2);
             Controls.Add(roundedButton3);
             Controls.Add(roundedButton2);
             Controls.Add(roundedButton1);
@@ -138,6 +189,8 @@
             Load += SimulationForm_Load;
             ((System.ComponentModel.ISupportInitialize)pictureBox1).EndInit();
             ((System.ComponentModel.ISupportInitialize)dataGridView1).EndInit();
+            ((System.ComponentModel.ISupportInitialize)pictureBox2).EndInit();
+            ((System.ComponentModel.ISupportInitialize)dataGridView2).EndInit();
             ResumeLayout(false);
             PerformLayout();
         }
@@ -152,5 +205,9 @@
         private System.ComponentModel.BackgroundWorker backgroundWorker1;
         private System.Windows.Forms.Timer timer1;
         private Helpers.RoundedButton roundedButton3;
+        private PictureBox pictureBox2;
+        private DataGridView dataGridView2;
+        private Label labelSign;
+        private Helpers.RoundedButton roundedButton4;
     }
 }

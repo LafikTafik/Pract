@@ -6,9 +6,29 @@ using System.Threading.Tasks;
 
 namespace NAMI.Models
 {
-    class TrafficSign
+    public enum TrafficSignType
     {
-        public string Type { get; set; } 
-        public int? Value { get; set; }   
+        SpeedLimit50,
+        Stop,
+        NoPassing,
+        PedestrianCrossing,
+        Yield,
+        OneWay,
+        Parking,
+        None
+    }
+
+    public class TrafficSign
+    {
+        public TrafficSignType Type { get; set; }
+        public Rectangle Bounds { get; set; } // Позиция и размер знака на экране
+        public bool IsVisible { get; set; }
+
+        public TrafficSign(TrafficSignType type, Rectangle bounds)
+        {
+            Type = type;
+            Bounds = bounds;
+            IsVisible = true;
+        }
     }
 }

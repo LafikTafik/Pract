@@ -18,11 +18,13 @@ namespace NAMI
         private DecisionMaker decisionMaker = new DecisionMaker();
         private int roadLineOffset = 0; // —мещение разметки
         private bool isPaused = false;
+        private SignManager signManager;
 
         public SimulationForm()
         {
             InitializeComponent();
             pictureBox1.Paint += pictureBox1_Paint;
+            signManager = new SignManager(pictureBox2, labelSign, dataGridView2);
         }
 
         public void pictureBox1_Paint(object sender, PaintEventArgs e)
@@ -268,6 +270,11 @@ namespace NAMI
                     UpdateDecisionLabel(decision); // обновл€ем рекомендацию
                 }
             }
+        }
+
+        private void roundedButton4_Click(object sender, EventArgs e)
+        {
+            signManager.LoadAndDetectSigns();
         }
     }
 }
