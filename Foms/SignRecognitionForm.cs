@@ -25,180 +25,102 @@ namespace NAMI.Foms
 
         private void roundedButton3_Click(object sender, EventArgs e)
         {
+            System.Diagnostics.Debug.WriteLine("Текущая папка: " + System.IO.Directory.GetCurrentDirectory());
             using (OpenFileDialog ofd = new OpenFileDialog())
             {
                 ofd.Filter = "Image Files (*.jpg;*.png)|*.jpg;*.png";
                 if (ofd.ShowDialog() == DialogResult.OK)
                 {
-                    var image = CvInvoke.Imread(ofd.FileName, ImreadModes.Color);
-                    picboxsign.Image = image.ToBitmap();
-
-                    // Предварительная обработка
-                    Mat gray = new Mat();
-                    CvInvoke.CvtColor(image, gray, ColorConversion.Bgr2Gray);
-                    CvInvoke.Threshold(gray, gray, 150, 255, ThresholdType.BinaryInv);
-
-                    VectorOfVectorOfPoint contours = new VectorOfVectorOfPoint();
-                    CvInvoke.FindContours(gray, contours, null, RetrType.External, ChainApproxMethod.ChainApproxSimple);
-
-                    for (int i = 0; i < contours.Size; i++)
+                    Mat image = CvInvoke.Imread(ofd.FileName, ImreadModes.Color);
+                    if (image.IsEmpty)
                     {
-                        VectorOfPoint approx = new VectorOfPoint();
-                        double peri = CvInvoke.ArcLength(contours[i], true);
-                        CvInvoke.ApproxPolyDP(contours[i], approx, 0.04 * peri, true);
-
-                        Rectangle roi = CvInvoke.BoundingRectangle(approx);
-
-                        if (roi.Width < 80 || roi.Height < 80)
-                            continue;
-
-                        string result = DetectTrafficSignWithTemplates(image, roi);
-                        labelSign.Text = $"Результат: {result}";
-
-                        if (result != "Неизвестный знак")
-                            return;
+                        MessageBox.Show("Ошибка: Не удалось загрузить изображение");
+                        return;
                     }
 
-                    labelSign.Text = "Знак не распознан";
+                    picboxsign.Image = image.ToBitmap();
+
+                    Mat resultImage;
+                    string signName = DetectTrafficSign(image, out resultImage);
+                    picboxsign.Image = resultImage.ToBitmap(); // отображаем результат с обводкой
+                    labelSign.Text = $"Обнаружен: {signName}";
                 }
             }
         }
-        private string DetectTrafficSign(Mat image)
+        private string DetectTrafficSign(Mat image, out Mat resultImage)
         {
-            if (image.IsEmpty) return "Неизвестный";
+            resultImage = image.Clone(); // Клонируем изображение для отрисовки
+
+            if (image.IsEmpty)
+                return "Неизвестный";
 
             // Предварительная обработка
-            Mat resized = new Mat();
-            CvInvoke.Resize(image, resized, new Size(640, 640));
-
             Mat gray = new Mat();
-            CvInvoke.CvtColor(resized, gray, ColorConversion.Bgr2Gray);
+            CvInvoke.CvtColor(image, gray, ColorConversion.Bgr2Gray);
             CvInvoke.EqualizeHist(gray, gray);
-            CvInvoke.GaussianBlur(gray, gray, new Size(5, 5), 0);
 
             Mat binary = new Mat();
             CvInvoke.Threshold(gray, binary, 150, 255, ThresholdType.BinaryInv);
-
-
+            CvInvoke.GaussianBlur(binary, binary, new Size(5, 5), 0);
 
             VectorOfVectorOfPoint contours = new VectorOfVectorOfPoint();
             CvInvoke.FindContours(binary, contours, null, RetrType.External, ChainApproxMethod.ChainApproxSimple);
-
+            
             for (int i = 0; i < contours.Size; i++)
             {
                 VectorOfPoint contour = contours[i];
                 double perimeter = CvInvoke.ArcLength(contour, true);
                 VectorOfPoint approx = new VectorOfPoint();
                 CvInvoke.ApproxPolyDP(contour, approx, 0.04 * perimeter, true);
-                Rectangle roi = CvInvoke.BoundingRectangle(approx);
+
                 int corners = approx.Size;
-                Rectangle rect = CvInvoke.BoundingRectangle(approx);
+                Rectangle roi = CvInvoke.BoundingRectangle(approx);
 
-                System.Diagnostics.Debug.WriteLine($"Контур {i}: Углы={corners}, Ширина={rect.Width}, Высота={rect.Height}");
+                // Проверка корректности ROI
+                double area = CvInvoke.ContourArea(contour);
+                if (area < 1000) continue;
 
-                if (rect.Width < 80 || rect.Height < 80)
+                using (Mat cropped = new Mat())
                 {
-                    System.Diagnostics.Debug.WriteLine("Пропускаем: слишком маленький объект");
-                    continue;
-                }
+                    int top = Math.Max(0, roi.Y);
+                    int bottom = Math.Max(0, image.Rows - roi.Y - roi.Height);
+                    int left = Math.Max(0, roi.X);
+                    int right = Math.Max(0, image.Cols - roi.X - roi.Width);
 
-                string shape = GetShape(corners, rect);
-                string color = GetDominantColor(resized, rect);
-                bool hasWhiteCenter = HasWhiteCenter(resized, rect, roi);
-                bool hasRedBorder = HasRedBorder(resized, rect, roi);
-                bool isSpeedLimitNumber = HasSpeedLimitDigit(resized, rect, roi);
-                bool isInvertedTriangle = IsInvertedTriangle(approx);
-                bool hasPedestrianPattern = HasPedestrianPattern(resized, rect, roi);
+                    CvInvoke.CopyMakeBorder(image, cropped, top, bottom, left, right, BorderType.Constant, new MCvScalar(0));
 
-                Console.WriteLine($"Форма: {shape}, Цвет: {color}");
-                Console.WriteLine($"Белый центр: {hasWhiteCenter}, Красная окантовка: {hasRedBorder}, Цифра: {isSpeedLimitNumber}, Пешеход: {hasPedestrianPattern}");
+                    // Теперь approx и corners доступны
+                    string shape = GetShape(corners, roi);
+                    string color = GetDominantColor(image, roi);
 
-                // Стоп
-                if (shape == "octagon" && color == "red")
-                {
-                    return "Стоп";
-                }
-
-                // Ограничение скорости
-                if (shape == "circle" && hasRedBorder && hasWhiteCenter && isSpeedLimitNumber)
-                {
-                    return "Ограничение скорости";
-                }
-
-                // Уступите дорогу
-                if (shape == "triangle" && color == "red" && hasWhiteCenter && isInvertedTriangle)
-                {
-                    return "Уступите дорогу";
-                }
-
-                // Пешеходный переход
-                if (shape == "circle" && color == "blue" && hasPedestrianPattern)
-                {
-                    return "Пешеходный переход";
-                }
-
-                // Движение прямо
-                if (shape == "square" && color == "blue" && HasStraightArrow(resized, rect))
-                {
-                    return "Движение прямо";
-                }
-
-                // Направление
-                if (shape == "square" && color == "green" && HasDirectionArrow(resized, rect))
-                {
-                    return "Направление";
+                    string matchedSign = MatchWithTemplates(cropped);
+                    if (matchedSign != "Неизвестный")
+                    {
+                        CvInvoke.DrawContours(resultImage, contours, i, new MCvScalar(0, 255, 0), 2);
+                        return matchedSign;
+                    }
                 }
             }
 
-            return "Неизвестный знак";
+            return "Неизвестный";
         }
 
         private string GetShape(int corners, Rectangle rect)
         {
-            // Отладка: вывод в консоль или Label
-            System.Diagnostics.Debug.WriteLine($"Контур: {corners} углов, W={rect.Width}, H={rect.Height}");
-
             double aspectRatio = (double)rect.Width / rect.Height;
-            System.Diagnostics.Debug.WriteLine($"Соотношение сторон: {aspectRatio:F2}");
 
-            // Форма: Восьмиугольник (Стоп)
-            if (corners >= 8 && Math.Abs(aspectRatio - 1) < 0.25)
-            {
-                return "octagon";
-            }
+            if (corners >= 8 && Math.Abs(aspectRatio - 1) < 0.2)
+                return "octagon"; // Стоп
 
-            // Форма: Треугольник
             if (corners == 3)
-            {
-                return "triangle";
-            }
+                return "triangle"; // Уступите дорогу
 
-            // Форма: Квадрат
             if (corners == 4 && Math.Abs(aspectRatio - 1) < 0.2)
-            {
-                return "square";
-            }
+                return "square"; // Движение прямо
 
-            // Форма: Горизонтальный прямоугольник
-            if (corners == 4 && aspectRatio > 1.3)
-            {
-                return "horizontal_rectangle";
-            }
+            if (corners > 6 && Math.Abs(aspectRatio - 1) < 0.1)
+                return "circle"; // Ограничение скорости
 
-            // Форма: Вертикальный прямоугольник
-            if (corners == 4 && aspectRatio < 0.7)
-            {
-                return "vertical_rectangle";
-            }
-
-            // Форма: Круг
-            if (corners > 6 && Math.Abs(aspectRatio - 1) < 0.15)
-            {
-                return "circle";
-            }
-
-            // Неизвестная форма
-            System.Diagnostics.Debug.WriteLine("Форма не определена");
             return "unknown";
         }
 
@@ -219,52 +141,37 @@ namespace NAMI.Foms
         {
             using (Mat cropped = new Mat())
             {
-                int top = roi.Y;
-                int bottom = image.Rows - roi.Y - roi.Height;
-                int left = roi.X;
-                int right = image.Cols - roi.X - roi.Width;
-
-                top = Math.Max(0, top);
-                bottom = Math.Max(0, bottom);
-                left = Math.Max(0, left);
-                right = Math.Max(0, right);
+                // Корректное вырезание ROI
+                int top = Math.Max(0, roi.Y);
+                int bottom = Math.Max(0, image.Rows - roi.Y - roi.Height);
+                int left = Math.Max(0, roi.X);
+                int right = Math.Max(0, image.Cols - roi.X - roi.Width);
 
                 CvInvoke.CopyMakeBorder(image, cropped, top, bottom, left, right, BorderType.Constant, new MCvScalar(0));
 
+                // Переводим в HSV
                 Mat hsv = new Mat();
                 CvInvoke.CvtColor(cropped, hsv, ColorConversion.Bgr2Hsv);
 
+                // Красный цвет (два диапазона в HSV)
                 ScalarArray lowerRed1 = new ScalarArray(new MCvScalar(0, 100, 100));
                 ScalarArray upperRed1 = new ScalarArray(new MCvScalar(10, 255, 255));
                 ScalarArray lowerRed2 = new ScalarArray(new MCvScalar(170, 100, 100));
                 ScalarArray upperRed2 = new ScalarArray(new MCvScalar(180, 255, 255));
-                ScalarArray lowerBlue = new ScalarArray(new MCvScalar(100, 150, 50));
-                ScalarArray upperBlue = new ScalarArray(new MCvScalar(140, 255, 255));
 
-                Mat maskRed1 = new Mat();
+                Mat maskRed1 = new Mat(), maskRed2 = new Mat();
                 CvInvoke.InRange(hsv, lowerRed1, upperRed1, maskRed1);
-                Mat maskRed2 = new Mat();
                 CvInvoke.InRange(hsv, lowerRed2, upperRed2, maskRed2);
-                CvInvoke.Add(maskRed1, maskRed2, maskRed1);
-
-                Mat maskBlue = new Mat();
-                CvInvoke.InRange(hsv, lowerBlue, upperBlue, maskBlue);
-
-                Mat grayMask = new Mat();
-                CvInvoke.CvtColor(cropped, grayMask, ColorConversion.Bgr2Gray);
-                CvInvoke.Threshold(grayMask, grayMask, 200, 255, ThresholdType.Binary);
-                int whiteCount = CountNonZero(grayMask);
+                CvInvoke.Add(maskRed1, maskRed2, maskRed1); // объединяем оба красных диапазона
 
                 int redCount = CountNonZero(maskRed1);
-                int blueCount = CountNonZero(maskBlue);
+                int totalPixels = roi.Width * roi.Height;
 
-                if (redCount > blueCount && redCount > whiteCount)
+                double redRatio = redCount / (double)totalPixels;
+                if (redRatio > 0.3)
                     return "red";
 
-                if (blueCount > whiteCount)
-                    return "blue";
-
-                return "white";
+                return "unknown";
             }
         }
 
@@ -345,39 +252,27 @@ namespace NAMI.Foms
             }
         }
 
-        private bool HasWhiteCenter(Mat image, Rectangle rect, Rectangle roi)
+        private bool HasWhiteCenter(Mat image, Rectangle roi)
         {
-            // Проверка корректности ROI
-            if (roi.Width <= 0 || roi.Height <= 0 ||
-                roi.X < 0 || roi.Y < 0 ||
-                roi.X + roi.Width > image.Cols || roi.Y + roi.Height > image.Rows)
-            {
-                System.Diagnostics.Debug.WriteLine("ROI некорректный");
-                return false;
-            }
-
             using (Mat cropped = new Mat())
             {
-                // Вырезаем ROI
-                CvInvoke.CopyMakeBorder(image, cropped, roi.Y, image.Rows - roi.Bottom, roi.X, image.Cols - roi.Right, BorderType.Constant, new MCvScalar(0));
+                int top = Math.Max(0, roi.Y);
+                int bottom = Math.Max(0, image.Rows - roi.Y - roi.Height);
+                int left = Math.Max(0, roi.X);
+                int right = Math.Max(0, image.Cols - roi.X - roi.Width);
 
-                // Переводим в оттенки серого
+                CvInvoke.CopyMakeBorder(image, cropped, top, bottom, left, right, BorderType.Constant, new MCvScalar(0));
+
                 Mat gray = new Mat();
                 CvInvoke.CvtColor(cropped, gray, ColorConversion.Bgr2Gray);
 
-                // Порог для белого цвета
-                Mat binary = new Mat();
-                CvInvoke.Threshold(gray, binary, 200, 255, ThresholdType.Binary);
+                Mat whiteMask = new Mat();
+                CvInvoke.Threshold(gray, whiteMask, 200, 255, ThresholdType.Binary);
 
-                // Подсчёт белых пикселей
-                int whiteCount = CountNonZero(binary);
-                double totalPixels = roi.Width * roi.Height;
-                double whiteRatio = whiteCount / totalPixels;
+                int whitePixels = CountNonZero(whiteMask);
+                double ratio = whitePixels / (double)(roi.Width * roi.Height);
 
-                System.Diagnostics.Debug.WriteLine($"Белые пиксели: {whiteCount}, Всего: {totalPixels}, Доля: {whiteRatio:F2}");
-
-                // Если более 60% белых пикселей → белый центр найден
-                return whiteRatio > 0.6 && whiteCount > 100;
+                return ratio > 0.6;
             }
         }
 
@@ -481,6 +376,51 @@ namespace NAMI.Foms
                 return horizontalLines >= 3;
             }
         }
+        private string MatchWithTemplates(Mat cropped)
+        {
+            var templates = new Dictionary<string, string>
+            {
+                {"Стоп", "templates/stop.png"},
+                {"Ограничение скорости", "templates/speed_limit.png"},
+                {"Уступите дорогу", "templates/yield.png"},
+                {"Пешеходный переход", "templates/pedestrian.png"}
+            };
+
+            double bestMatch = 0.2 ;
+            string matchedSign = "Неизвестный";
+
+            foreach (var pair in templates)
+            {
+                string signName = pair.Key;
+                string path = pair.Value;
+
+                if (!System.IO.File.Exists(path))
+                {
+                    System.Diagnostics.Debug.WriteLine($"Файл не найден: {path}");
+                    continue;
+                }
+
+                using (Mat template = CvInvoke.Imread(path, ImreadModes.Color))
+                {
+                    if (template.IsEmpty)
+                    {
+                        System.Diagnostics.Debug.WriteLine($"{signName}: Шаблон пустой");
+                        continue;
+                    }
+
+                    double matchValue = TemplateMatch(cropped, template);
+                    System.Diagnostics.Debug.WriteLine($"{signName}: {matchValue:F2}");
+
+                    if (matchValue > bestMatch)
+                    {
+                        bestMatch = matchValue;
+                        matchedSign = signName;
+                    }
+                }
+            }
+
+            return matchedSign;
+        }
 
         private bool AnalyzeInterior(Mat image, Rectangle roi, string shape)
         {
@@ -516,29 +456,31 @@ namespace NAMI.Foms
         }
         private double TemplateMatch(Mat source, Mat template)
         {
-    if (source.IsEmpty || template.IsEmpty) return 0;
+            if (source.IsEmpty || template.IsEmpty)
+                return 0;
 
-    // Переводим в серый
-    Mat sourceGray = new Mat();
-    CvInvoke.CvtColor(source, sourceGray, ColorConversion.Bgr2Gray);
+            // Переводим в серый
+            Mat sourceGray = new Mat();
+            CvInvoke.CvtColor(source, sourceGray, ColorConversion.Bgr2Gray);
 
-    Mat templateGray = new Mat();
-    CvInvoke.CvtColor(template, templateGray, ColorConversion.Bgr2Gray);
+            Mat templateGray = new Mat();
+            CvInvoke.CvtColor(template, templateGray, ColorConversion.Bgr2Gray);
 
-    // Масштабируем шаблон под ROI
-    Mat resizedTemplate = new Mat();
-    CvInvoke.Resize(templateGray, resizedTemplate, new Size(sourceGray.Width, sourceGray.Height));
+            // Масштабируем шаблон под ROI
+            Mat resizedTemplate = new Mat();
+            CvInvoke.Resize(templateGray, resizedTemplate, new Size(sourceGray.Width, sourceGray.Height));
 
-    // Сравнение
-    Mat result = new Mat();
-    CvInvoke.MatchTemplate(sourceGray, resizedTemplate, result, TemplateMatchingType.CcoeffNormed);
+            // Вычисляем корреляцию
+            Mat result = new Mat();
+            CvInvoke.MatchTemplate(sourceGray, resizedTemplate, result, TemplateMatchingType.CcoeffNormed);
 
-    double minVal = 0, maxVal = 0;
-    Point minLoc = new Point(), maxLoc = new Point();
-    CvInvoke.MinMaxLoc(result, ref minVal, ref maxVal, ref minLoc, ref maxLoc);
+            double minVal = 0, maxVal = 0;
+            Point minLoc = new Point(), maxLoc = new Point();
 
-    return maxVal;
-}
+            CvInvoke.MinMaxLoc(result, ref minVal, ref maxVal, ref minLoc, ref maxLoc);
+
+            return maxVal;
+        }
         private string DetectTrafficSignWithTemplates(Mat image, Rectangle roi)
         {
             using (Mat cropped = new Mat())
@@ -589,6 +531,5 @@ namespace NAMI.Foms
                 return matchedSign;
             }
         }
-
     }
 }
