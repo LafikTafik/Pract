@@ -1,4 +1,4 @@
-using Emgu.CV.CvEnum;
+п»їusing Emgu.CV.CvEnum;
 using Emgu.CV;
 using NAMI.Foms;
 using NAMI.Models;
@@ -8,6 +8,7 @@ using System.Collections.Generic;
 using System.Drawing;
 using System.Windows.Forms;
 using Emgu.CV.Util;
+using System.Text.RegularExpressions;
 
 namespace NAMI
 {
@@ -15,79 +16,152 @@ namespace NAMI
     {
         private Random _random = new Random();
         private System.Windows.Forms.Timer timer;
-        public List<DetectedObject> lidarObjects = new List<DetectedObject>(); // Добавляем поле для объектов LiDAR
+        public List<DetectedObject> lidarObjects = new List<DetectedObject>(); // Р”РѕР±Р°РІР»СЏРµРј РїРѕР»Рµ РґР»СЏ РѕР±СЉРµРєС‚РѕРІ LiDAR
         private LiDARSimulator lidarSimulator = new LiDARSimulator();
         private ObstacleDetector obstacleDetector = new ObstacleDetector();
         private DecisionMaker decisionMaker = new DecisionMaker();
-        private int roadLineOffset = 0; // Смещение разметки
+        private int roadLineOffset = 0; // РЎРјРµС‰РµРЅРёРµ СЂР°Р·РјРµС‚РєРё
         private bool isPaused = false;
+        private Bitmap carImage;
+        private Bitmap oncomingCarImage;
+        private Bitmap pedestrianImage;
+        private Bitmap outcarImage;
 
+        private float speedFactor = 1.0f;
+        private float targetX ;
+        private float CarX ; // С‚РµРєСѓС‰Р°СЏ X-РєРѕРѕСЂРґРёРЅР°С‚Р° Р°РІС‚РѕРјРѕР±РёР»СЏ
         public SimulationForm()
         {
             InitializeComponent();
             pictureBox1.Paint += pictureBox1_Paint;
+            carImage = ResizeImage(new Bitmap(Image.FromFile("images/car.png")), new Size(70, 110));
+            oncomingCarImage = ResizeImage(new Bitmap(Image.FromFile("images/oncoming_car.png")), new Size(70, 110));
+            pedestrianImage = ResizeImage(new Bitmap(Image.FromFile("images/pedestrian.png")), new Size(25, 25));
+            outcarImage = ResizeImage(new Bitmap(Image.FromFile("images/outcar.png")), new Size(70, 110));
+            int roadWidth = 400;
+            int roadX = pictureBox1.Width / 2 - roadWidth / 2;
+            int CarX = roadX + roadWidth - 120; // РЎРїСЂР°РІР° РїРѕ РѕСЃРё X
+            int carY = (pictureBox1.Height / 2) + 200; // Р¦РµРЅС‚СЂ СЌРєСЂР°РЅР°
+            targetX = CarX;
+        }
+        private bool IsPositionOccupied(float newX, float newY, SizeF newSize)
+        {
+            foreach (var obj in lidarObjects)
+            {
+                RectangleF existingRect = new RectangleF(obj.Position.X, obj.Position.Y, obj.Size.Width, obj.Size.Height);
+                RectangleF newRect = new RectangleF(newX, newY, newSize.Width, newSize.Height);
+
+                if (existingRect.IntersectsWith(newRect))
+                    return true;
+            }
+            return false;
+        }
+
+        private Bitmap ResizeImage(Bitmap original, Size newSize)
+        {
+            Bitmap resized = new Bitmap(original, newSize);
+            return resized;
+        }
+
+
+        private Bitmap LoadImage(string path)
+        {
+            if (!System.IO.File.Exists(path))
+            {
+                System.Diagnostics.Debug.WriteLine($"Р¤Р°Р№Р» РЅРµ РЅР°Р№РґРµРЅ: {path}");
+                return null;
+            }
+
+            try
+            {
+                return new Bitmap(Image.FromFile(path));
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"РћС€РёР±РєР° Р·Р°РіСЂСѓР·РєРё: {ex.Message}");
+                return null;
+            }
+        }
+
+        private Bitmap GetImageForObjectType(ObjectType type)
+        {
+            switch (type)
+            {
+                case ObjectType.Car:
+                    return carImage;
+                case ObjectType.OncomingCar:
+                    return oncomingCarImage;
+                case ObjectType.Pedestrian:
+                    return pedestrianImage;
+                default:
+                    return null;
+            }
         }
 
         public void pictureBox1_Paint(object sender, PaintEventArgs e)
         {
             Graphics g = e.Graphics;
 
-            // Размеры элементов
-            int roadWidth = 400; // Ширина дороги
+            // Р Р°Р·РјРµСЂС‹ СЌР»РµРјРµРЅС‚РѕРІ
+            int roadWidth = 400; // РЁРёСЂРёРЅР° РґРѕСЂРѕРіРё
             int roadLineOffset = 0;
-            int roadX = pictureBox1.Width / 2 - roadWidth / 2; // Центральная часть PictureBox
+            int roadX = pictureBox1.Width / 2 - roadWidth / 2; // Р¦РµРЅС‚СЂР°Р»СЊРЅР°СЏ С‡Р°СЃС‚СЊ PictureBox
 
-            // Общая дорога
+            // РћР±С‰Р°СЏ РґРѕСЂРѕРіР°
             g.FillRectangle(Brushes.Gray, roadX, 0, roadWidth, pictureBox1.Height);
 
-            Pen linePen = new Pen(Color.White, 5); // Толстая белая линия
-            int lineX = roadX + roadWidth / 2; // Центральная ось дороги
+            Pen linePen = new Pen(Color.White, 5); // РўРѕР»СЃС‚Р°СЏ Р±РµР»Р°СЏ Р»РёРЅРёСЏ
+            int lineX = roadX + roadWidth / 2; // Р¦РµРЅС‚СЂР°Р»СЊРЅР°СЏ РѕСЃСЊ РґРѕСЂРѕРіРё
             for (int y = 0; y < pictureBox1.Height + 50; y += 50)
             {
                 int currentY = y - roadLineOffset;
 
-                // Ограничиваем только область дороги
+                // РћРіСЂР°РЅРёС‡РёРІР°РµРј С‚РѕР»СЊРєРѕ РѕР±Р»Р°СЃС‚СЊ РґРѕСЂРѕРіРё
                 if (currentY >= -50 && currentY <= pictureBox1.Height)
                 {
                     g.DrawLine(linePen, lineX, currentY, lineX, currentY + 20);
                 }
             }
 
-            // Обочины
-            g.FillRectangle(Brushes.Brown, 0, 0, roadX, pictureBox1.Height); // Левая обочина
-            g.FillRectangle(Brushes.Brown, roadX + roadWidth, 0, pictureBox1.Width - roadX - roadWidth, pictureBox1.Height); // Правая обочина
+            // РћР±РѕС‡РёРЅС‹
+            g.FillRectangle(Brushes.Brown, 0, 0, roadX, pictureBox1.Height); // Р›РµРІР°СЏ РѕР±РѕС‡РёРЅР°
+            g.FillRectangle(Brushes.Brown, roadX + roadWidth, 0, pictureBox1.Width - roadX - roadWidth, pictureBox1.Height); // РџСЂР°РІР°СЏ РѕР±РѕС‡РёРЅР°
 
-            // Газоны
-            g.FillRectangle(Brushes.Green, -40, 0, roadX, pictureBox1.Height); // Левый газон
-            g.FillRectangle(Brushes.Green, roadX + roadWidth + 40, 0, pictureBox1.Width - roadX - roadWidth, pictureBox1.Height); // Правый газон
+            // Р“Р°Р·РѕРЅС‹
+            g.FillRectangle(Brushes.Green, -40, 0, roadX, pictureBox1.Height); // Р›РµРІС‹Р№ РіР°Р·РѕРЅ
+            g.FillRectangle(Brushes.Green, roadX + roadWidth + 40, 0, pictureBox1.Width - roadX - roadWidth, pictureBox1.Height); // РџСЂР°РІС‹Р№ РіР°Р·РѕРЅ
 
-            // Точки LiDAR
+            // РўРѕС‡РєРё LiDAR
             foreach (var obj in lidarObjects)
             {
                 if (obj.Position.Y >= 0 && obj.Position.Y <= pictureBox1.Height)
                 {
-                    Brush brush = obj.Type switch
+                    Bitmap bmp = GetImageForObjectType(obj.Type);
+                    if (bmp != null)
                     {
-                        ObjectType.Car => Brushes.Red,
-                        ObjectType.OncomingCar => Brushes.Yellow,
-                        ObjectType.Pedestrian => Brushes.Green,
-                        _ => Brushes.Black
-                    };
+                        int drawX = (int)obj.Position.X - bmp.Width / 2; // С†РµРЅС‚СЂРёСЂСѓРµРј РёР·РѕР±СЂР°Р¶РµРЅРёРµ
+                        int drawY = (int)obj.Position.Y - bmp.Height / 2;
 
-                    g.FillEllipse(brush, obj.Position.X, obj.Position.Y, 30, 30); // Размер точек увеличен
+                        g.DrawImage(bmp, new Rectangle(drawX, drawY, bmp.Width, bmp.Height));
+                    }
+                    else
+                    {
+                        // Р РµР·РµСЂРІРЅР°СЏ РѕС‚СЂРёСЃРѕРІРєР° вЂ” РµСЃР»Рё РёР·РѕР±СЂР°Р¶РµРЅРёРµ РЅРµ РЅР°Р№РґРµРЅРѕ
+                        g.FillEllipse(Brushes.Gray, obj.Position.X, obj.Position.Y, 30, 30);
+                    }
                 }
             }
 
-            // Автомобиль (точка зрения)
-            int carX = roadX + roadWidth - 100; // Машину помещаем на правой стороне дороги
-            int carY = (pictureBox1.Height / 2) + 80; // По центру экрана
-            PointF[] carTriangle =
+            //int carX = roadX + roadWidth - 120; // РЎРїСЂР°РІР° РїРѕ РѕСЃРё X
+            //int carY = (pictureBox1.Height / 2) + 200; // Р¦РµРЅС‚СЂ СЌРєСЂР°РЅР°
+            //e.Graphics.DrawImage(outcarImage, new Rectangle(carX, carY, outcarImage.Width, outcarImage.Height));
+            int drawCarX = (int)CarX; // вњ… РСЃРїРѕР»СЊР·СѓРµРј CarX РёР· РєР»Р°СЃСЃР°
+            int drawCarY = (pictureBox1.Height / 2) + 80;
+
+            if (outcarImage != null)
             {
-                new PointF(carX, carY + 25),          // Левый нижний угол
-                new PointF(carX + 30, carY + 25),     // Правый нижний угол
-                new PointF(carX + 15, carY)           // Верхушка треугольника
-              };
-            g.FillPolygon(Brushes.Blue, carTriangle); // Автомобиль
+              e.Graphics.DrawImage(outcarImage, new Rectangle(drawCarX, drawCarY, outcarImage.Width, outcarImage.Height));
+            }
         }
 
         private void UpdateDataGridView(List<DetectedObject> obstacles)
@@ -98,14 +172,14 @@ namespace NAMI
             {
                 string typeStr = obj.Type switch
                 {
-                    ObjectType.Car => "Автомобиль",
-                    ObjectType.OncomingCar => "Встречный автомобиль",
-                    ObjectType.Pedestrian => "Пешеход",
-                    _ => "Неизвестный"
+                    ObjectType.Car => "РђРІС‚РѕРјРѕР±РёР»СЊ",
+                    ObjectType.OncomingCar => "Р’СЃС‚СЂРµС‡РЅС‹Р№ Р°РІС‚РѕРјРѕР±РёР»СЊ",
+                    ObjectType.Pedestrian => "РџРµС€РµС…РѕРґ",
+                    _ => "РќРµРёР·РІРµСЃС‚РЅС‹Р№"
                 };
 
-                float carY = (pictureBox1.Height / 2) + 80; // автомобиль в центре экрана
-                float distance = Math.Abs(obj.Position.Y - carY); // расстояние до автомобиля
+                float carY = (pictureBox1.Height / 2) + 80; // Р°РІС‚РѕРјРѕР±РёР»СЊ РІ С†РµРЅС‚СЂРµ СЌРєСЂР°РЅР°
+                float distance = Math.Abs(obj.Position.Y - carY); // СЂР°СЃСЃС‚РѕСЏРЅРёРµ РґРѕ Р°РІС‚РѕРјРѕР±РёР»СЏ
 
                 dataGridView1.Rows.Add(typeStr, distance, obj.Speed);
                 dataGridView1.Rows.Add(typeStr, obj.Position.Y, obj.Speed);
@@ -116,17 +190,17 @@ namespace NAMI
         {
             dataGridView1.Columns.Clear();
 
-            // Добавляем столбцы
-            dataGridView1.Columns.Add("ObjectType", "Тип");
-            dataGridView1.Columns.Add("Distance", "Расстояние (м)");
-            dataGridView1.Columns.Add("Speed", "Скорость (км/ч)");
+            // Р”РѕР±Р°РІР»СЏРµРј СЃС‚РѕР»Р±С†С‹
+            dataGridView1.Columns.Add("ObjectType", "РўРёРї");
+            dataGridView1.Columns.Add("Distance", "Р Р°СЃСЃС‚РѕСЏРЅРёРµ (Рј)");
+            dataGridView1.Columns.Add("Speed", "РЎРєРѕСЂРѕСЃС‚СЊ (РєРј/С‡)");
         }
 
         public void roundedButton1_Click(object sender, EventArgs e)
         {
             MainForm mainForm = new MainForm();
             mainForm.Show();
-            this.Close(); // или Hide(), если хотите сохранить состояние
+            this.Close(); // РёР»Рё Hide(), РµСЃР»Рё С…РѕС‚РёС‚Рµ СЃРѕС…СЂР°РЅРёС‚СЊ СЃРѕСЃС‚РѕСЏРЅРёРµ
         }
 
         public void roundedButton2_Click(object sender, EventArgs e)
@@ -134,26 +208,54 @@ namespace NAMI
             if (timer == null)
             {
                 timer = new System.Windows.Forms.Timer();
-                timer.Interval = 50; // Обновление каждые 50 мс
+                timer.Interval = 50; // РћР±РЅРѕРІР»РµРЅРёРµ РєР°Р¶РґС‹Рµ 50 РјСЃ
                 timer.Tick += Timer_Tick;
                 timer.Start();
             }
         }
 
+        private bool CheckCollision(DetectedObject a, DetectedObject b)
+        {
+            RectangleF rectA = new RectangleF(a.Position.X, a.Position.Y, a.Size.Width, a.Size.Height);
+            RectangleF rectB = new RectangleF(b.Position.X, b.Position.Y, b.Size.Width, b.Size.Height);
+
+            return rectA.IntersectsWith(rectB);
+        }
+        
+      
         public void Timer_Tick(object sender, EventArgs e)
         {
+
+            // РџР»Р°РІРЅРѕРµ РґРІРёР¶РµРЅРёРµ Рє С†РµР»РµРІРѕР№ РїРѕР·РёС†РёРё
+            if (Math.Abs(CarX - targetX) > 1)
+            {
+                CarX += (targetX - CarX) * 0.1f * speedFactor;
+            }
             float carY = (pictureBox1.Height / 2) + 80;
-            // Получаем параметры дороги
+            // РџРѕР»СѓС‡Р°РµРј РїР°СЂР°РјРµС‚СЂС‹ РґРѕСЂРѕРіРё
             int roadWidth = 400;
             int roadX = pictureBox1.Width / 2 - roadWidth / 2;
+            int LaneOffset = 100;
 
-            // Генерируем новые объекты
-            if (lidarObjects.Count < 10 && _random.Next(0, 100) < 30)
+            int lane1X = roadX + roadWidth - LaneOffset;
+            int lane2X = roadX + LaneOffset;
+
+            int carCount = lidarObjects.Count(o => o.Type == ObjectType.Car || o.Type == ObjectType.OncomingCar);
+            int maxCars = 6;
+
+
+            if (carCount < maxCars && _random.Next(0, 100) < 30)
             {
                 lidarObjects.AddRange(lidarSimulator.GenerateTestPoints(roadX, pictureBox1.Height));
             }
 
-            // Двигаем все объекты вниз
+            // Р“РµРЅРµСЂРёСЂСѓРµРј РЅРѕРІС‹Рµ РѕР±СЉРµРєС‚С‹
+            //if (lidarObjects.Count < 10 && _random.Next(0, 100) < 30)
+            //{
+            //lidarObjects.AddRange(lidarSimulator.GenerateTestPoints(roadX, pictureBox1.Height));
+            //}
+
+            // Р”РІРёРіР°РµРј РІСЃРµ РѕР±СЉРµРєС‚С‹ РІРЅРёР·
             for (int i = 0; i < lidarObjects.Count; i++)
             {
                 var obj = lidarObjects[i];
@@ -169,7 +271,23 @@ namespace NAMI
                 }
             }
 
-            // Удаляем объекты, которые вышли за нижнюю границу
+            for (int i = 0; i < lidarObjects.Count; i++)
+{
+    var objA = lidarObjects[i];
+
+    for (int j = i + 1; j < lidarObjects.Count; j++)
+    {
+        var objB = lidarObjects[j];
+        if (CheckCollision(objA, objB))
+        {
+            System.Diagnostics.Debug.WriteLine("РћР±СЉРµРєС‚С‹ СЃС‚РѕР»РєРЅСѓР»РёСЃСЊ!");
+            // РњРѕР¶РЅРѕ РЅРµРјРЅРѕРіРѕ СЃРјРµСЃС‚РёС‚СЊ РѕРґРёРЅ РёР· РЅРёС…
+            objB.Position = new PointF(objB.Position.X + 20, objB.Position.Y);
+        }
+    }
+}
+
+            // РЈРґР°Р»СЏРµРј РѕР±СЉРµРєС‚С‹, РєРѕС‚РѕСЂС‹Рµ РІС‹С€Р»Рё Р·Р° РЅРёР¶РЅСЋСЋ РіСЂР°РЅРёС†Сѓ
             lidarObjects = lidarObjects
                 .Where(o =>
                 {
@@ -179,50 +297,90 @@ namespace NAMI
                         case ObjectType.OncomingCar:
                             return o.Position.Y < pictureBox1.Height;
                         case ObjectType.Pedestrian:
-                            return o.Position.X < pictureBox1.Width + 20; // удаляем, когда пешеход перешёл дорогу
+                            return o.Position.X < pictureBox1.Width + 20; // СѓРґР°Р»СЏРµРј, РєРѕРіРґР° РїРµС€РµС…РѕРґ РїРµСЂРµС€С‘Р» РґРѕСЂРѕРіСѓ
                         default:
                             return true;
                     }
                 })
                 .ToList();
-            // Обновляем PictureBox
+            // РћР±РЅРѕРІР»СЏРµРј PictureBox
             pictureBox1.Invalidate();
 
-            // Обновляем DataGridView
+            // РћР±РЅРѕРІР»СЏРµРј DataGridView
             var obstacles = obstacleDetector.DetectObstacles(lidarObjects);
             UpdateDataGridView(obstacles);
 
-            // Обновляем рекомендацию
+            // РћР±РЅРѕРІР»СЏРµРј СЂРµРєРѕРјРµРЅРґР°С†РёСЋ
             string decision = decisionMaker.MakeDecision(obstacles, carY);
 
-            labelDecision.Text = $"Рекомендация: {decision}";
+            labelDecision.Text = $"Р РµРєРѕРјРµРЅРґР°С†РёСЏ: {decision}";
 
-            // Установка цвета
+            // РЈСЃС‚Р°РЅРѕРІРєР° С†РІРµС‚Р°
             switch (decision)
             {
-                case "Обгон по встречной полосе":
+                case "РћР±РіРѕРЅ РїРѕ РІСЃС‚СЂРµС‡РЅРѕР№ РїРѕР»РѕСЃРµ":
                     labelDecision.BackColor = Color.Green;
                     labelDecision.ForeColor = Color.White;
+                    targetX = roadX + 140;
+                    // РЈРІРµР»РёС‡СЊ СЃРєРѕСЂРѕСЃС‚СЊ РЅРµРјРЅРѕРіРѕ
+                    foreach (var obj in lidarObjects)
+                    {
+                        if (obj.Type == ObjectType.Car || obj.Type == ObjectType.OncomingCar)
+                            obj.Speed = Math.Min(obj.InitialSpeed * 1.1f, obj.InitialSpeed * 1.5f);
+                    }
                     break;
-                case "Обгон по обочине":
+
+                case "РћР±РіРѕРЅ РїРѕ РѕР±РѕС‡РёРЅРµ":
                     labelDecision.BackColor = Color.Orange;
                     labelDecision.ForeColor = Color.Black;
+                    targetX = roadX + roadWidth - 20  ;
+                    // РЈРјРµРЅСЊС€Рё СЃРєРѕСЂРѕСЃС‚СЊ РЅР° РІСЂРµРјСЏ РјР°РЅС‘РІСЂР°
+                    foreach (var obj in lidarObjects) 
+                    {
+                        if (obj.Type == ObjectType.Car || obj.Type == ObjectType.OncomingCar)
+                            obj.Speed = Math.Max(obj.InitialSpeed * 0.5f, obj.Speed * 0.98f);
+                    }
                     break;
-                case "Сбросьте скорость":
+
+                case "РџРµС€РµС…РѕРґ - РЎР±СЂРѕСЃСЊС‚Рµ СЃРєРѕСЂРѕСЃС‚СЊ":
                     labelDecision.BackColor = Color.Red;
                     labelDecision.ForeColor = Color.White;
+
+                    // Р—Р°РјРµРґР»РёРј РІСЃРµ РјР°С€РёРЅС‹
+                    foreach (var obj in lidarObjects)
+                    {
+                        if (obj.Type == ObjectType.Car || obj.Type == ObjectType.OncomingCar)
+                            obj.Speed *= 0.95f;
+                    }
                     break;
+
                 default:
+                    float defaultCarX = roadX + roadWidth - 120;
                     labelDecision.BackColor = SystemColors.Control;
                     labelDecision.ForeColor = SystemColors.ControlText;
+                    targetX = defaultCarX; 
+
+                    // Р’РѕСЃСЃС‚Р°РЅРѕРІРёРј СЃРєРѕСЂРѕСЃС‚СЊ
+                    foreach (var obj in lidarObjects)
+                    {
+                        if ((obj.Type == ObjectType.Car || obj.Type == ObjectType.OncomingCar) && obj.Speed < obj.InitialSpeed)
+                        {
+                            obj.Speed += obj.InitialSpeed * 0.2f;
+                            if (obj.Speed > obj.InitialSpeed)
+                                obj.Speed = obj.InitialSpeed;
+                        }
+                    }
                     break;
             }
-            // Обновляем смещение разметки
+
+
+            CarX += (targetX - CarX) * 0.1f;
+            // РћР±РЅРѕРІР»СЏРµРј СЃРјРµС‰РµРЅРёРµ СЂР°Р·РјРµС‚РєРё
             roadLineOffset += 3;
             if (roadLineOffset > 50)
                 roadLineOffset = 0;
 
-            // Перерисовываем PictureBox
+            // РџРµСЂРµСЂРёСЃРѕРІС‹РІР°РµРј PictureBox
             pictureBox1.Invalidate();
         }
 
@@ -230,15 +388,15 @@ namespace NAMI
         {
             switch (decision)
             {
-                case "Обгон по встречной полосе":
+                case "РћР±РіРѕРЅ РїРѕ РІСЃС‚СЂРµС‡РЅРѕР№ РїРѕР»РѕСЃРµ":
                     labelDecision.BackColor = Color.Green;
                     labelDecision.ForeColor = Color.White;
                     break;
-                case "Обгон по обочине":
+                case "РћР±РіРѕРЅ РїРѕ РѕР±РѕС‡РёРЅРµ":
                     labelDecision.BackColor = Color.Orange;
                     labelDecision.ForeColor = Color.Black;
                     break;
-                case "Сбросьте скорость":
+                case "РџРµС€РµС…РѕРґ - РЎР±СЂРѕСЃСЊС‚Рµ СЃРєРѕСЂРѕСЃС‚СЊ":
                     labelDecision.BackColor = Color.Red;
                     labelDecision.ForeColor = Color.White;
                     break;
@@ -248,7 +406,7 @@ namespace NAMI
                     break;
             }
 
-            labelDecision.Text = $"Рекомендация: {decision}";
+            labelDecision.Text = $"Р РµРєРѕРјРµРЅРґР°С†РёСЏ: {decision}";
         }
         private void roundedButton3_Click(object sender, EventArgs e)
         {
@@ -261,14 +419,14 @@ namespace NAMI
                 if (isPaused)
                 {
                     timer.Stop();
-                    labelDecision.Text = "Симуляция приостановлена";
+                    labelDecision.Text = "РЎРёРјСѓР»СЏС†РёСЏ РїСЂРёРѕСЃС‚Р°РЅРѕРІР»РµРЅР°";
                     labelDecision.BackColor = Color.Gray;
                 }
                 else
                 {
                     timer.Start();
                     string decision = decisionMaker.MakeDecision(obstacles, carY);
-                    UpdateDecisionLabel(decision); // обновляем рекомендацию
+                    UpdateDecisionLabel(decision); // РѕР±РЅРѕРІР»СЏРµРј СЂРµРєРѕРјРµРЅРґР°С†РёСЋ
                 }
             }
         }

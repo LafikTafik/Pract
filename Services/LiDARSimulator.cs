@@ -23,11 +23,18 @@ namespace NAMI.Services
             if (_random.Next(0, 100) < 10) // 15% шанс
             {
                 float y = _random.Next(0, 50); // сверху
+
+                SizeF size = ObjectType.Car switch
+                {
+                    _ => new SizeF(70, 110), // стандартный размер
+                };
+
                 objects.Add(new DetectedObject
                 {
                     Type = ObjectType.Car,
                     Position = new PointF(roadX + RoadWidth - LaneOffset, y), // справа
-                    Speed = 10f // реалистичная скорость
+                    Speed = 10f, // реалистичная скорость
+                    InitialSpeed = 10f
                 });
             }
 
@@ -35,12 +42,20 @@ namespace NAMI.Services
             if (_random.Next(0, 100) < 15) // 10% шанс
             {
                 float y = _random.Next(0, 50); // сверху
+
+                SizeF size = ObjectType.Car switch
+                {
+                    _ => new SizeF(70, 110), // стандартный размер
+                };
+
                 objects.Add(new DetectedObject
                 {
                     Type = ObjectType.OncomingCar,
                     Position = new PointF(roadX + LaneOffset, y), // слева
-                    Speed = 20f // чуть быстрее
+                    Speed = 20f,// чуть быстрее
+                    InitialSpeed = 20f
                 });
+
             }
 
             // 👤 Пешеход — появляется слева и переходит дорогу

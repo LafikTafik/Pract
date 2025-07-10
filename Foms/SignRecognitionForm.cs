@@ -15,6 +15,8 @@ using System.Threading.Tasks;
 using System.Windows.Forms;
 using Pix = Tesseract.Pix;
 using ImageFormat = System.Drawing.Imaging.ImageFormat;
+using System.Text.RegularExpressions;
+using System.Xml.Linq;
 
 namespace NAMI.Foms
 {
@@ -116,7 +118,7 @@ namespace NAMI.Foms
                     using (Mat processed = Preprocess(cropped))
                     {
                         // Анализируем признаки
-                        string shape = GetShape(corners, roi);
+                        string shape = GetShape(contour, roi);
                         string color = GetDominantColor(image, roi);
                         bool hasWhiteCenter = HasWhiteCenter(cropped, roi);
                         bool hasRedBorder = HasRedBorder(cropped, roi);
@@ -124,6 +126,8 @@ namespace NAMI.Foms
                         bool hasPedestrianPattern = HasPedestrianPattern(cropped, roi);
                         bool isInvertedTriangle = IsInvertedTriangle(approx);
 
+                        string numberText = RecognizeSpeedLimitNumber(cropped);
+                        bool isSpeedLimit = !string.IsNullOrEmpty(numberText);
 
                         System.Diagnostics.Debug.WriteLine($"Форма: {shape}, Цвет: {color}");
                         System.Diagnostics.Debug.WriteLine($"Белый центр: {hasWhiteCenter}, Красная окантовка: {hasRedBorder}");
@@ -135,9 +139,8 @@ namespace NAMI.Foms
                             return "Стоп";
                         }
 
-                        if (shape == "circle" && hasRedBorder && hasWhiteCenter)
+                        if (shape == "circle" && isSpeedLimit && hasRedBorder && hasWhiteCenter)
                         {
-                            string numberText = RecognizeSpeedLimitNumber(cropped);
                             if (!string.IsNullOrEmpty(numberText))
                             {
                                 CvInvoke.Rectangle(resultImage, roi, new MCvScalar(0, 255, 0), 2);
@@ -151,7 +154,7 @@ namespace NAMI.Foms
                             return "Уступите дорогу";
                         }
 
-                        if (shape == "circle" && color == "blue" && hasPedestrianPattern)
+                        if (shape == "square" && color == "blue" && hasPedestrianPattern)
                         {
                             CvInvoke.Rectangle(resultImage, roi, new MCvScalar(0, 255, 0), 2);
                             return "Пешеходный переход";
@@ -191,9 +194,20 @@ namespace NAMI.Foms
             return "Неизвестный";
         }
 
-        private string GetShape(int corners, Rectangle rect)
+        private string GetShape(VectorOfPoint contour, Rectangle rect)
         {
+            
+            double perimeter = CvInvoke.ArcLength(contour, true);
+            VectorOfPoint approx = new VectorOfPoint();
+            CvInvoke.ApproxPolyDP(contour, approx, 0.04 * perimeter, true);
+
+
+            int corners = approx.Size;
             double aspectRatio = (double)rect.Width / rect.Height;
+
+            // Проверка формы через HuMoments
+            Moments moments = CvInvoke.Moments(approx);
+            double[] huMoments = CvInvoke.HuMoments(moments);
 
             // Проверка для круга: высокая округлость + соотношение сторон близко к 1
             if (corners >= 7 && Math.Abs(aspectRatio - 1) < 0.15)
@@ -246,27 +260,78 @@ namespace NAMI.Foms
 
                 CvInvoke.CopyMakeBorder(image, cropped, top, bottom, left, right, BorderType.Constant, new MCvScalar(0));
 
-                // Переводим в HSV
+                if (cropped.IsEmpty)
+                    return "unknown";
+
+                // Переводим в HSV для анализа цвета
                 Mat hsv = new Mat();
                 CvInvoke.CvtColor(cropped, hsv, ColorConversion.Bgr2Hsv);
 
-                // Красный цвет (два диапазона в HSV)
+                // Диапазоны цветов в HSV
                 ScalarArray lowerRed1 = new ScalarArray(new MCvScalar(0, 100, 100));
                 ScalarArray upperRed1 = new ScalarArray(new MCvScalar(10, 255, 255));
                 ScalarArray lowerRed2 = new ScalarArray(new MCvScalar(170, 100, 100));
                 ScalarArray upperRed2 = new ScalarArray(new MCvScalar(180, 255, 255));
 
+                ScalarArray lowerBlue = new ScalarArray(new MCvScalar(100, 150, 50));
+                ScalarArray upperBlue = new ScalarArray(new MCvScalar(140, 255, 255));
+
+                ScalarArray lowerWhite = new ScalarArray(new MCvScalar(0, 0, 200));
+                ScalarArray upperWhite = new ScalarArray(new MCvScalar(180, 20, 255));
+
+                ScalarArray lowerYellow = new ScalarArray(new MCvScalar(20, 100, 100));
+                ScalarArray upperYellow = new ScalarArray(new MCvScalar(30, 255, 255));
+
+
+                // Маски для каждого цвета
                 Mat maskRed1 = new Mat(), maskRed2 = new Mat();
                 CvInvoke.InRange(hsv, lowerRed1, upperRed1, maskRed1);
                 CvInvoke.InRange(hsv, lowerRed2, upperRed2, maskRed2);
-                CvInvoke.Add(maskRed1, maskRed2, maskRed1); // объединяем оба красных диапазона
+                CvInvoke.Add(maskRed1, maskRed2, maskRed1); // объединяем оба диапазона красного
 
+                Mat maskBlue = new Mat();
+                CvInvoke.InRange(hsv, lowerBlue, upperBlue, maskBlue);
+
+                Mat maskWhite = new Mat();
+                CvInvoke.InRange(hsv, lowerWhite, upperWhite, maskWhite);
+
+                Mat maskYellow = new Mat();
+                CvInvoke.InRange(hsv, lowerYellow, upperYellow, maskYellow);
+
+
+                // Подсчёт пикселей
                 int redCount = CountNonZero(maskRed1);
-                int totalPixels = roi.Width * roi.Height;
+                int blueCount = CountNonZero(maskBlue);
+                int whiteCount = CountNonZero(maskWhite);
+                int yellowCount = CountNonZero(maskYellow);
 
-                double redRatio = redCount / (double)totalPixels;
-                if (redRatio > 0.3)
+                double total = roi.Width * roi.Height;
+
+                // Нормализация по площади
+                double redRatio = redCount / total;
+                double blueRatio = blueCount / total;
+                double whiteRatio = whiteCount / total;
+                double yellowRatio = yellowCount / total;
+
+
+                // Вывод отладочной информации (полезно при тестировании)
+                System.Diagnostics.Debug.WriteLine($"Цветовой анализ → красный: {redRatio:F2}, синий: {blueRatio:F2}, белый: {whiteRatio:F2}");
+
+                // Пороги могут быть разными, если нужна большая точность
+                const double colorThreshold = 0.2;
+
+                if (redRatio > colorThreshold && redCount > whiteCount && redCount > blueCount && redCount > yellowCount)
                     return "red";
+
+                if (blueRatio > colorThreshold && blueCount > redCount && blueCount > whiteCount && blueCount > yellowCount)
+                    return "blue";
+
+                if (whiteRatio > colorThreshold && whiteCount > redCount && whiteCount > blueCount && whiteCount > yellowCount)
+                    return "white";
+
+                if (yellowRatio > colorThreshold && yellowCount > redCount && yellowCount > blueCount && yellowCount > whiteCount)
+                    return "yellow";
+
 
                 return "unknown";
             }
@@ -378,49 +443,32 @@ namespace NAMI.Foms
 
         private bool HasRedBorder(Mat image, Rectangle roi)
         {
-            // Проверка: ROI должен быть внутри изображения
-            if (roi.Width <= 0 || roi.Height <= 0 ||
-                roi.X < 0 || roi.Y < 0 ||
-                roi.X + roi.Width > image.Cols || roi.Y + roi.Height > image.Rows)
-            {
-                System.Diagnostics.Debug.WriteLine("ROI вне допустимых границ");
-                return false;
-            }
-
             using (Mat cropped = new Mat())
             {
-                CvInvoke.CopyMakeBorder(image, cropped, roi.Y, image.Rows - roi.Bottom, roi.X, image.Cols - roi.Right, BorderType.Constant, new MCvScalar(0));
+                int top = Math.Max(0, roi.Y);
+                int bottom = Math.Max(0, image.Rows - roi.Y - roi.Height);
+                int left = Math.Max(0, roi.X);
+                int right = Math.Max(0, image.Cols - roi.X - roi.Width);
+                CvInvoke.CopyMakeBorder(image, cropped, top, bottom, left, right, BorderType.Constant, new MCvScalar(0));
 
                 Mat hsv = new Mat();
                 CvInvoke.CvtColor(cropped, hsv, ColorConversion.Bgr2Hsv);
 
-                // Диапазон красного цвета (2 диапазона для HSV)
                 ScalarArray lowerRed1 = new ScalarArray(new MCvScalar(0, 100, 100));
                 ScalarArray upperRed1 = new ScalarArray(new MCvScalar(10, 255, 255));
                 ScalarArray lowerRed2 = new ScalarArray(new MCvScalar(170, 100, 100));
                 ScalarArray upperRed2 = new ScalarArray(new MCvScalar(180, 255, 255));
 
-                Mat maskRed1 = new Mat();
+                Mat maskRed1 = new Mat(), maskRed2 = new Mat();
                 CvInvoke.InRange(hsv, lowerRed1, upperRed1, maskRed1);
-                Mat maskRed2 = new Mat();
                 CvInvoke.InRange(hsv, lowerRed2, upperRed2, maskRed2);
-
-                CvInvoke.Add(maskRed1, maskRed2, maskRed1); // Объединяем оба красных диапазона
-
-                // Улучшаем маску с помощью морфологических операций
+                CvInvoke.Add(maskRed1, maskRed2, maskRed1);
                 Mat element = CvInvoke.GetStructuringElement(ElementShape.Rectangle, new Size(3, 3), new Point(-1, -1));
-
-                // ✅ Здесь исправляем вызов Dilate и Erode — добавляем anchor
-                CvInvoke.Dilate(maskRed1, maskRed1, element, new Point(-1, -1), 1, BorderType.Constant, new MCvScalar());
                 CvInvoke.Erode(maskRed1, maskRed1, element, new Point(-1, -1), 1, BorderType.Constant, new MCvScalar());
-
                 int redCount = CountNonZero(maskRed1);
-                double totalPixels = roi.Width * roi.Height;
-                double redRatio = redCount / totalPixels;
+                double ratio = redCount / (double)(roi.Width * roi.Height);
 
-                System.Diagnostics.Debug.WriteLine($"Красные пиксели: {redCount}, Всего: {totalPixels}, Доля: {redRatio:F2}");
-
-                return redRatio > 0.3 && redCount > 500;
+                return ratio > 0.3;
             }
         }
 
@@ -572,53 +620,62 @@ namespace NAMI.Foms
             if (source.IsEmpty || template.IsEmpty)
                 return 0;
 
-            // Переводим в серый
+            // Переводим в серый и нормализуем
             Mat sourceGray = new Mat();
             CvInvoke.CvtColor(source, sourceGray, ColorConversion.Bgr2Gray);
-
             Mat templateGray = new Mat();
             CvInvoke.CvtColor(template, templateGray, ColorConversion.Bgr2Gray);
 
-            // Масштабируем шаблон под ROI
-            Mat resizedTemplate = new Mat();
-            CvInvoke.Resize(templateGray, resizedTemplate, new Size(sourceGray.Width, sourceGray.Height));
+            // Масштабируем под одинаковый размер
+            Mat sourceResized = new Mat();
+            CvInvoke.Resize(sourceGray, sourceResized, new Size(100, 100));
 
-            // Вычисляем корреляцию
+            Mat templateResized = new Mat();
+            CvInvoke.Resize(templateGray, templateResized, new Size(100, 100));
+
             Mat result = new Mat();
-            CvInvoke.MatchTemplate(sourceGray, resizedTemplate, result, TemplateMatchingType.CcoeffNormed);
+            CvInvoke.MatchTemplate(sourceResized, templateResized, result, TemplateMatchingType.CcoeffNormed);
 
             double minVal = 0, maxVal = 0;
             Point minLoc = new Point(), maxLoc = new Point();
-
             CvInvoke.MinMaxLoc(result, ref minVal, ref maxVal, ref minLoc, ref maxLoc);
 
             return maxVal;
         }
 
-        private string RecognizeSpeedLimitNumber(Mat croppedSign)
+        private string RecognizeSpeedLimitNumber(Mat cropped)
         {
+            Mat processed = PreprocessForOCR(cropped); // метод ниже
+            string tempPath = Path.Combine(Path.GetTempPath(), "speed_limit_temp.png");
+            processed.ToBitmap().Save(tempPath, ImageFormat.Png);
 
-            // Шаг 1: Сохраняем Mat как Bitmap во временную папку
-            string tempImagePath = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "speed_limit_temp.png");
-
-            // Переводим в Bitmap и сохраняем
-            croppedSign.ToBitmap().Save(tempImagePath, ImageFormat.Png);
-
-            // Шаг 2: Загружаем изображение через Tesseract
             using (var engine = new TesseractEngine("tessdata", "eng", EngineMode.Default))
             {
-                using (var img = Pix.LoadFromFile(tempImagePath)) // ✅ Правильный способ
+                using (var img = Pix.LoadFromFile(tempPath))
                 {
                     using (var page = engine.Process(img))
                     {
                         string text = page.GetText().Trim();
-
-                        // Шаг 3: Ищем только цифры
-                        var match = System.Text.RegularExpressions.Regex.Match(text, @"\d+");
+                        var match = Regex.Match(text, @"\d+");
                         return match.Success ? match.Value : null;
                     }
                 }
             }
+        }
+
+        private Mat PreprocessForOCR(Mat input)
+        {
+            Mat gray = new Mat();
+            CvInvoke.CvtColor(input, gray, ColorConversion.Bgr2Gray);
+
+            Mat binary = new Mat();
+            CvInvoke.Threshold(gray, binary, 200, 255, ThresholdType.BinaryInv);
+
+            CvInvoke.GaussianBlur(binary, binary, new Size(3, 3), 0);
+            CvInvoke.Erode(binary, binary, null,  new Point(-1, -1), 1, BorderType.Constant, new MCvScalar());
+            CvInvoke.Dilate(binary, binary, null, new Point(-1, -1), 1, BorderType.Constant, new MCvScalar());
+
+            return binary;
         }
 
         private string DetectTrafficSignWithTemplates(Mat image, Rectangle roi)
