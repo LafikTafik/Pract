@@ -38,8 +38,11 @@
             timer1 = new System.Windows.Forms.Timer(components);
             roundedButton3 = new NAMI.Helpers.RoundedButton();
             roundedButton4 = new NAMI.Helpers.RoundedButton();
+            pictureBoxSign = new PictureBox();
+            labelSignDecision = new Label();
             ((System.ComponentModel.ISupportInitialize)pictureBox1).BeginInit();
             ((System.ComponentModel.ISupportInitialize)dataGridView1).BeginInit();
+            ((System.ComponentModel.ISupportInitialize)pictureBoxSign).BeginInit();
             SuspendLayout();
             // 
             // pictureBox1
@@ -55,21 +58,21 @@
             // dataGridView1
             // 
             dataGridView1.ColumnHeadersHeightSizeMode = DataGridViewColumnHeadersHeightSizeMode.AutoSize;
-            dataGridView1.Location = new Point(818, 12);
+            dataGridView1.Location = new Point(824, 12);
             dataGridView1.Name = "dataGridView1";
             dataGridView1.RowHeadersWidth = 51;
-            dataGridView1.Size = new Size(500, 700);
+            dataGridView1.Size = new Size(390, 425);
             dataGridView1.TabIndex = 1;
             // 
             // labelDecision
             // 
             labelDecision.AutoSize = true;
             labelDecision.BackColor = SystemColors.ButtonHighlight;
-            labelDecision.Font = new Font("T-FLEX Type B", 19.7999973F, FontStyle.Bold, GraphicsUnit.Point, 204);
+            labelDecision.Font = new Font("T-FLEX Type B", 25.8F, FontStyle.Bold, GraphicsUnit.Point, 204);
             labelDecision.ForeColor = SystemColors.Highlight;
-            labelDecision.Location = new Point(12, 749);
+            labelDecision.Location = new Point(818, 497);
             labelDecision.Name = "labelDecision";
-            labelDecision.Size = new Size(522, 36);
+            labelDecision.Size = new Size(664, 47);
             labelDecision.TabIndex = 2;
             labelDecision.Text = "\"Рекомендация: Движение разрешено\"";
             // 
@@ -80,7 +83,7 @@
             roundedButton1.FlatStyle = FlatStyle.Flat;
             roundedButton1.Font = new Font("T-FLEX Type B", 25.8F, FontStyle.Bold, GraphicsUnit.Point, 204);
             roundedButton1.ForeColor = SystemColors.Highlight;
-            roundedButton1.Location = new Point(1324, 612);
+            roundedButton1.Location = new Point(1230, 791);
             roundedButton1.Name = "roundedButton1";
             roundedButton1.Size = new Size(400, 100);
             roundedButton1.TabIndex = 3;
@@ -95,7 +98,7 @@
             roundedButton2.FlatStyle = FlatStyle.Flat;
             roundedButton2.Font = new Font("T-FLEX Type B", 25.8F, FontStyle.Bold, GraphicsUnit.Point, 204);
             roundedButton2.ForeColor = SystemColors.Highlight;
-            roundedButton2.Location = new Point(1324, 12);
+            roundedButton2.Location = new Point(12, 791);
             roundedButton2.Name = "roundedButton2";
             roundedButton2.Size = new Size(400, 100);
             roundedButton2.TabIndex = 4;
@@ -114,7 +117,7 @@
             roundedButton3.FlatStyle = FlatStyle.Flat;
             roundedButton3.Font = new Font("T-FLEX Type B", 25.8F, FontStyle.Bold, GraphicsUnit.Point, 204);
             roundedButton3.ForeColor = SystemColors.Highlight;
-            roundedButton3.Location = new Point(1324, 118);
+            roundedButton3.Location = new Point(418, 791);
             roundedButton3.Name = "roundedButton3";
             roundedButton3.Size = new Size(400, 100);
             roundedButton3.TabIndex = 5;
@@ -129,7 +132,7 @@
             roundedButton4.FlatStyle = FlatStyle.Flat;
             roundedButton4.Font = new Font("T-FLEX Type B", 25.8F, FontStyle.Bold, GraphicsUnit.Point, 204);
             roundedButton4.ForeColor = SystemColors.Highlight;
-            roundedButton4.Location = new Point(1324, 224);
+            roundedButton4.Location = new Point(824, 791);
             roundedButton4.Name = "roundedButton4";
             roundedButton4.Size = new Size(400, 100);
             roundedButton4.TabIndex = 6;
@@ -137,12 +140,35 @@
             roundedButton4.UseVisualStyleBackColor = false;
             roundedButton4.Click += roundedButton4_Click;
             // 
+            // pictureBoxSign
+            // 
+            pictureBoxSign.Location = new Point(1220, 12);
+            pictureBoxSign.Name = "pictureBoxSign";
+            pictureBoxSign.Size = new Size(400, 425);
+            pictureBoxSign.SizeMode = PictureBoxSizeMode.Zoom;
+            pictureBoxSign.TabIndex = 7;
+            pictureBoxSign.TabStop = false;
+            // 
+            // labelSignDecision
+            // 
+            labelSignDecision.AutoSize = true;
+            labelSignDecision.BackColor = SystemColors.ButtonHighlight;
+            labelSignDecision.Font = new Font("T-FLEX Type B", 25.8F, FontStyle.Bold, GraphicsUnit.Point, 204);
+            labelSignDecision.ForeColor = SystemColors.Highlight;
+            labelSignDecision.Location = new Point(818, 571);
+            labelSignDecision.Name = "labelSignDecision";
+            labelSignDecision.Size = new Size(105, 47);
+            labelSignDecision.TabIndex = 8;
+            labelSignDecision.Text = "Знак:";
+            // 
             // SimulationForm
             // 
             AutoScaleDimensions = new SizeF(8F, 20F);
             AutoScaleMode = AutoScaleMode.Font;
             BackColor = SystemColors.ActiveCaption;
-            ClientSize = new Size(1742, 803);
+            ClientSize = new Size(1632, 903);
+            Controls.Add(labelSignDecision);
+            Controls.Add(pictureBoxSign);
             Controls.Add(roundedButton4);
             Controls.Add(roundedButton3);
             Controls.Add(roundedButton2);
@@ -155,6 +181,7 @@
             Load += SimulationForm_Load;
             ((System.ComponentModel.ISupportInitialize)pictureBox1).EndInit();
             ((System.ComponentModel.ISupportInitialize)dataGridView1).EndInit();
+            ((System.ComponentModel.ISupportInitialize)pictureBoxSign).EndInit();
             ResumeLayout(false);
             PerformLayout();
         }
@@ -170,5 +197,7 @@
         private System.Windows.Forms.Timer timer1;
         private Helpers.RoundedButton roundedButton3;
         private Helpers.RoundedButton roundedButton4;
+        private PictureBox pictureBoxSign;
+        private Label labelSignDecision;
     }
 }

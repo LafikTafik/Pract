@@ -72,7 +72,7 @@ namespace NAMI.Foms
             return binary;
         }
 
-        private string DetectTrafficSign(Mat image, out Mat resultImage)
+        public string DetectTrafficSign(Mat image, out Mat resultImage)
         {
             resultImage = image.Clone();
 
@@ -538,11 +538,11 @@ namespace NAMI.Foms
         {
             var templates = new Dictionary<string, string>
             {
-                {"Ограничение скорости1", "templates/speed_limit1.png"},
-                {"Ограничение скорости2", "templates/speed_limit2.png"},
-                {"Пешеходный переход1", "templates/pedestrian1.png"},
-                {"Пешеходный переход2", "templates/pedestrian2.png"},
-                {"Пешеходный переход3", "templates/pedestrian3.png"},
+                {"Oграничение скорости", "templates/speed_limit1.png"},
+                {"Огpаничение скорости", "templates/speed_limit2.png"},
+                {"Пешeходный переход", "templates/pedestrian1.png"},
+                {"Пeшеходный переход", "templates/pedestrian2.png"},
+                {"Пешеходный пeреход", "templates/pedestrian3.png"},
                 {"Стоп", "templates/stop.png"},
                 {"Уступите дорогу", "templates/yield.png"}
             };

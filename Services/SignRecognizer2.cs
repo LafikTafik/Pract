@@ -8,7 +8,7 @@ using System.Drawing;
 
 namespace NAMI.Services
 {
-    class SignRecognizer
+    class SignRecognizer2
     {
 
         public TrafficSign Recognize(Bitmap image)
